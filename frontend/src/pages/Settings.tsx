@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getLLMConfig, setLLMConfig, testLLMConfig } from '../lib/api'
+import { getLLMConfig, listOpencodeFreeModels, setLLMConfig, testLLMConfig } from '../lib/api'
+import type { OpencodeFreeModel } from '../lib/api'
 import { errorMessage, useAsync } from '../lib/useAsync'
 import { PageHeader } from '../components/PageHeader'
 import { AlertIcon, ShieldIcon } from '../components/icons'
@@ -19,6 +20,8 @@ export function SettingsPage() {
   const [saveErr, setSaveErr] = useState<string | null>(null)
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState<'save' | 'test' | null>(null)
+  const [ocModels, setOcModels] = useState<OpencodeFreeModel[] | null>(null)
+  const [ocError, setOcError] = useState<string | null>(null)
 
   // Pré-remplissage depuis la config réelle du backend (jamais la clé).
   useEffect(() => {
@@ -29,8 +32,36 @@ export function SettingsPage() {
     setApiKey('') // la clé n'est jamais réaffichée — champ vide par défaut
   }, [serverConfig])
 
+  // provider opencode-cli : catalogue LIVE des modèles free (aucune clé requise)
+  useEffect(() => {
+    if (provider !== 'opencode-cli') return
+    setOcModels(null)
+    setOcError(null)
+    let cancelled = false
+    listOpencodeFreeModels()
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok && res.models.length > 0) {
+          setOcModels(res.models)
+          // si le modèle courant n'existe pas dans le catalogue : bascule sur le modèle validé
+          setModel((cur) =>
+            res.models.some((m) => m.id === cur) ? cur : 'deepseek-v4.1-flash-free',
+          )
+        } else {
+          setOcError(res.error ?? 'catalogue vide')
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setOcError(errorMessage(err))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [provider])
+
   const keyConfigured = serverConfig?.key_configured ?? false
-  const providers = serverConfig?.providers_available ?? ['mock', 'opencode', 'openai', 'gemini', 'anthropic', 'deepseek', 'compatible']
+  const providers = serverConfig?.providers_available ?? ['mock', 'opencode', 'opencode-cli', 'openai', 'gemini', 'anthropic', 'deepseek', 'compatible']
+  const isOpencodeCli = provider === 'opencode-cli'
 
   async function handleSave() {
     setBusy('save')
@@ -116,30 +147,63 @@ export function SettingsPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Modèle" htmlFor="llm-model" hint="ex. gpt-4o-mini, gemini-2.0-flash, claude-sonnet-4-5, deepseek-chat…">
-              <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} />
-            </Field>
-            <Field label="base_url (compatible uniquement)" htmlFor="llm-base">
-              <Input id="llm-base" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
-            </Field>
             <Field
-              label="Clé API"
-              htmlFor="llm-key"
+              label="Modèle"
+              htmlFor="llm-model"
               hint={
-                keyConfigured
-                  ? 'Une clé est déjà configurée en mémoire backend. Le champ reste vide : la clé n\'est jamais réaffichée.'
-                  : 'Aucune clé configurée. Obligatoire pour tous les providers hors mock.'
+                isOpencodeCli
+                  ? 'Modèles FREE OpenCode (catalogue live, tool-calls supportés)'
+                  : 'ex. gpt-4o-mini, gemini-2.0-flash, claude-sonnet-4-5, deepseek-chat…'
               }
             >
-              <Input
-                id="llm-key"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                autoComplete="new-password"
-                placeholder="••••••••••••"
-              />
+              {isOpencodeCli ? (
+                ocError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    Catalogue indisponible : {ocError}. Le CLI OpenCode doit être installé et
+                    l'accès réseau ouvert.
+                  </div>
+                ) : ocModels == null ? (
+                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                    Chargement du catalogue des modèles free…
+                  </div>
+                ) : (
+                  <Select id="llm-model" value={model} onChange={(e) => setModel(e.target.value)}>
+                    {ocModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} — {m.id}
+                      </option>
+                    ))}
+                  </Select>
+                )
+              ) : (
+                <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} />
+              )}
             </Field>
+            {!isOpencodeCli && (
+              <>
+                <Field label="base_url (compatible uniquement)" htmlFor="llm-base">
+                  <Input id="llm-base" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
+                </Field>
+                <Field
+                  label="Clé API"
+                  htmlFor="llm-key"
+                  hint={
+                    keyConfigured
+                      ? 'Une clé est déjà configurée en mémoire backend. Le champ reste vide : la clé n\'est jamais réaffichée.'
+                      : 'Aucune clé configurée. Obligatoire pour tous les providers hors mock et opencode-cli.'
+                  }
+                >
+                  <Input
+                    id="llm-key"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    autoComplete="new-password"
+                    placeholder="••••••••••••"
+                  />
+                </Field>
+              </>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

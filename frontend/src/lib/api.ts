@@ -3,6 +3,7 @@
  * Aucun secret n'est stocké côté frontend au-delà de l'envoi immédiat.
  */
 
+import type { ReportListItem } from './chatReports'
 import type {
   Assessment,
   AuditMission,
@@ -200,6 +201,24 @@ export function runAssessments(runId: string) {
 
 export function runFindings(runId: string) {
   return request<{ findings: Finding[] }>(`/api/runs/${runId}/findings`)
+}
+
+export interface OpencodeFreeModel {
+  id: string
+  name: string
+  context: number | null
+  structured_output: boolean
+}
+
+export function listOpencodeFreeModels() {
+  return request<{ ok: boolean; models: OpencodeFreeModel[]; error?: string }>(
+    '/api/settings/llm/opencode/models',
+  )
+}
+
+export function listReports(q?: string) {
+  const suffix = q ? `?q=${encodeURIComponent(q)}` : ''
+  return request<{ reports: ReportListItem[] }>(`/api/reports${suffix}`)
 }
 
 export function runReport(runId: string) {
