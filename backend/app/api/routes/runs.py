@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -38,6 +39,37 @@ async def get_latest_checkpoint(run_id: str, request: Request):
         raise HTTPException(404, "run inconnu")
     cp = await d.repo.latest_checkpoint(run_id)
     return {"checkpoint": cp.model_dump() if cp else None}
+
+
+class SteerBody(BaseModel):
+    instruction: str = Field(min_length=5, max_length=1000)
+
+
+@router.post("/{run_id}/steer")
+async def steer_run(run_id: str, body: SteerBody, request: Request):
+    """Pilotage auditeur d'un run en cours (Phase 8/10) : file d'instructions
+    consommées à frontière de tour par la boucle. Statut initial `queued`."""
+    d = deps(request)
+    run = await d.repo.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run inconnu")
+    if run.status not in (RunStatus.running, RunStatus.paused, RunStatus.needs_input):
+        raise HTTPException(409, f"run non pilotable en statut {run.status.value}")
+    item = d.orchestrator.steering.submit(run_id, body.instruction)
+    if item is None:
+        raise HTTPException(409, "instruction identique déjà en file")
+    await d.bus.publish(run_id, "steering_received", item.to_dict())
+    return {"steering": item.to_dict()}
+
+
+@router.get("/{run_id}/steer")
+async def steering_status(run_id: str, request: Request):
+    d = deps(request)
+    run = await d.repo.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run inconnu")
+    items = [i.to_dict() for i in d.orchestrator.steering.items(run_id)]
+    return {"steering": items}
 
 
 @router.post("/{run_id}/pause")

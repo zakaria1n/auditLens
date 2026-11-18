@@ -187,6 +187,7 @@ function RunSection({
   const tools = events.filter((e) => e.type === 'tool_started')
   const evidences = events.filter((e) => e.type === 'evidence')
   const needsInput = events.filter((e) => e.type === 'info_request' || e.type === 'needs_input')
+  const steering = events.filter((e) => e.type === 'steering_received' || e.type === 'steering_applied')
   const decisions = events.filter((e) => e.type === 'investigation_decision')
   const privacy = events.filter((e) => e.type === 'privacy_preview')
   const status = run?.status ?? '…'
@@ -242,7 +243,18 @@ function RunSection({
             })()}
           </div>
         )}
-          {needsInput.length > 0 && (
+          {steering.length > 0 && (
+          <div className="rounded-xl bg-sky-50 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Pilotage auditeur</p>
+            {steering.map((e) => (
+              <p key={e.seq} className="mt-0.5 text-[11px] leading-snug text-sky-800">
+                {e.type === 'steering_applied' ? '✓ appliquée : ' : '⏳ reçue : '}
+                {String((e.data as Record<string, unknown>).instruction ?? '')}
+              </p>
+            ))}
+          </div>
+        )}
+        {needsInput.length > 0 && (
             <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
               {needsInput.map((e) => (
                 <p key={e.seq}>❓ {String((e.data as Record<string, unknown>).message ?? 'question à l’auditeur')}</p>

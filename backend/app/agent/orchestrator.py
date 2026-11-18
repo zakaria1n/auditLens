@@ -148,6 +148,7 @@ class RunOrchestrator:
         bus: EventBus,
         input_models: dict,
         controls: dict[str, set[str]] | None = None,
+        steering=None,
     ):
         self.repo = repo
         self.store = store
@@ -158,6 +159,9 @@ class RunOrchestrator:
         # Registre de contrôle runtime (ADR-15) : {run_id: {"pause","stop"}} rempli par
         # les endpoints pause/stop ; consommé (discard) par la boucle entre deux tours.
         self.controls = controls if controls is not None else {}
+        from .steering import SteeringQueue
+
+        self.steering = steering if steering is not None else SteeringQueue()
 
     def _consume_control(self, run_id: str, action: str) -> bool:
         flags = self.controls.get(run_id)
@@ -165,6 +169,14 @@ class RunOrchestrator:
             flags.discard(action)
             return True
         return False
+
+    def _drain_steering(self, run_id: str) -> list[dict]:
+        """Frontière de tour (Phase 8/10) : consomme les instructions auditeur en
+        attente — JAMAIS pendant un tool en vol. Statut applied + événement."""
+        items = self.steering.drain(run_id)
+        for item in items:
+            self.bus.publish(run_id, "steering_applied", item.to_dict())
+        return [item.to_dict() for item in items]
 
     async def execute_run(self, run: AuditRun, mission: AuditMission, provider: LLMProvider,
                           resume_state: dict | None = None) -> None:
@@ -557,6 +569,9 @@ class RunOrchestrator:
                 "note": exposure["note"],
                 "phase": "investigation",
             })
+            steered = self._drain_steering(run.id)
+            if steered:
+                state.user_directives.extend(d["instruction"] for d in steered)
             prompt = investigation_request(
                 mission.objective, controls, capabilities,
                 evidence_summaries_now, state,

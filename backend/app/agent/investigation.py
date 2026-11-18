@@ -132,6 +132,7 @@ class InvestigationState:
         self.info_requests: list[str] = []
         self.stop_rationale: str | None = None
         self.decision_log: list[dict] = []          # historique borné (contexte docs/06)
+        self.user_directives: list[str] = []        # pilotage auditeur (Phase 8/10)
         self._last_signature: str | None = None     # signature du dernier call_tool
         self._repeat_count: int = 0                 # répétitions consécutives identiques
         self.consecutive_errors: int = 0            # échecs consécutifs sans succès
@@ -246,6 +247,7 @@ class InvestigationState:
     def to_payload(self) -> dict:
         return {
             "decisions_used": self.decisions,
+            "user_directives": list(self.user_directives),
             "hypotheses": [h.to_dict() for h in self.hypotheses],
             "recent_observations": [o.to_dict() for o in self.observations],
             "info_requests": list(self.info_requests),
@@ -312,6 +314,7 @@ def investigation_request(
             for c in capabilities
         ],
         "evidence_summaries": evidence_summaries,
+        "auditor_directives": list(state.user_directives),
         "investigation_state": state.to_payload(),
         "remaining_tool_calls": remaining_tool_calls,
         "remaining_decisions": remaining_decisions,
@@ -319,6 +322,8 @@ def investigation_request(
     return (
         "TASK: decide_next_action\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n"
+        "DIRECTIVES DE L'AUDITEUR (auditor_directives) : a traiter EN PRIORITE dans la limite du "
+        "perimetre autorise (aucune source ajoutee, aucune approbation contournee) ; "
         "Tu es en BOUCLE D'INVESTIGATION : à chaque tour tu observes les preuves collectées et tu "
         "choisis UNE action. Utilise `call_tool` pour tester une hypothèse (tool copiée MOT POUR MOT "
         f"depuis: [{', '.join(exact_tools)}]; args conformes au `schema`, source_id exact). Pour les "

@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     app.state.connectors = connectors
     app.state.bus = bus
     app.state.orchestrator = orchestrator
+    app.state.steering_queue = orchestrator.steering
     app.state.input_models = input_models
     app.state.llm_runtime = {}  # BYOK en mémoire uniquement (docs/10)
     app.state.run_controls = run_controls  # pause/stop runtime (ADR-15)
