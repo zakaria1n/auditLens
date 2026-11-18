@@ -80,6 +80,18 @@ class EvidenceExcerptInput(BaseModel):
     row_end: int = Field(default=5, ge=1, le=50)
 
 
+class DataExploreInput(BaseModel):
+    evidence_id: str
+    spec: dict = Field(
+        description=(
+            "Spécification d'exploration TYPÉE : fields (projection), filter "
+            "[{field, op: eq|ne|gt|gte|lt|lte|contains|in|not_null, value}], sort "
+            "[{field, dir}], group_by + aggregate {op: count|sum|avg|min|max, field}, "
+            "compare {left_field, right_field, op}, limit (<=50). Calculs déterministes."
+        )
+    )
+
+
 class EvidenceSearchInput(BaseModel):
     evidence_id: str
     query: str = Field(min_length=1, max_length=200, description="texte ou identifiant à rechercher (insensible à la casse)")
@@ -731,6 +743,59 @@ async def tool_get_evidence_excerpt(ctx: ToolContext, args: dict) -> ToolResult:
 MAX_SEARCH_SCAN = 5000  # bornes CPU : arrêt du scan au-delà (docs/05 exécution bornée)
 
 
+async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
+    """Exploration bornée et déterministe d'une evidence d'enregistrements (Phase 2/10).
+    Le LLM décide QUOI explorer ; les calculs sont exécutés ici (aucun SQL, aucune
+    exécution arbitraire). Le résultat devient une evidence `exploration` traçable."""
+    from ..audit.exploration import apply_exploration
+
+    ev, full = await _load_evidence(ctx, args["evidence_id"])
+    records = _records_from_payload(full)
+    if not records:
+        return ToolResult(
+            tool_call_id="", tool="data_explore", source_id=ev.source_id,
+            status="insufficient_evidence",
+            error=f"l'evidence {ev.id} ne contient pas d'enregistrements exploitables (type={ev.type})",
+        )
+    spec = args.get("spec") or {}
+    if not isinstance(spec, dict) or not any(
+        k in spec for k in ("filter", "sort", "group_by", "aggregate", "compare", "fields")
+    ):
+        return ToolResult(
+            tool_call_id="", tool="data_explore", status="error",
+            error="spec vide : fournir au moins une opération (filter/sort/group_by/aggregate/compare/fields)",
+        )
+    result = apply_exploration(records, spec)
+    if result.get("unknown_fields"):
+        return ToolResult(
+            tool_call_id="", tool="data_explore", status="error",
+            error=f"champs inconnus dans la spécification : {', '.join(result['unknown_fields'])} "
+                  f"(champs disponibles : {', '.join(sorted(records[0].keys()))})",
+        )
+    result["source_evidence_id"] = ev.id
+    result["source_evidence_title"] = ev.title
+    result["mission_id"] = ctx.mission.id
+
+    new_ev = ctx.store.save(
+        mission_id=ctx.mission.id, run_id=ctx.run_id, source_id=ev.source_id,
+        type_="exploration", title=f"Exploration — {ev.title}",
+        payload={"exploration": result, "source_evidence_id": ev.id, "spec": spec},
+        provenance={"tool": "data_explore", "source_evidence": ev.id, "spec": spec},
+        record_count=result["returned_rows"],
+        summary={
+            "source_evidence_id": ev.id, "total_after_filters": result["total_after_filters"],
+            "returned_rows": result["returned_rows"],
+            "comparison": result.get("comparison"), "groups": result.get("groups"),
+        },
+        evidence_id=new_id("evidence"),
+    )
+    await ctx.repo.create_evidence_meta(new_ev)
+    return ToolResult(
+        tool_call_id="", tool="data_explore", source_id=ev.source_id, status="success",
+        evidence_ids=[new_ev.id], record_count=result["returned_rows"], preview=redact(result),
+    )
+
+
 async def tool_evidence_search(ctx: ToolContext, args: dict) -> ToolResult:
     """Recherche bornée DANS une preuve collectée (aucun accès externe, docs/14).
 
@@ -870,6 +935,10 @@ TOOL_DEFS: list[dict] = [
           "Retourne un extrait borné d'une evidence d'enregistrements, minimisé et traçable.",
           [], PermissionLevel.read, EvidenceExcerptInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "row_start": {"type": "integer"}, "row_end": {"type": "integer"}}, "required": ["evidence_id"]}),
+    _spec("data_explore", "Explorer les données",
+          "Exploration bornée et DÉTERMINISTE d'une evidence d'enregistrements : filtre, tri, group_by+agrégat (count/sum/avg/min/max), comparaison de champs, projection, limite. Spéc JSON typée — calculs exécutés par le backend, jamais par le modèle.",
+          [], PermissionLevel.local, DataExploreInput,
+          {"type": "object", "properties": {"evidence_id": {"type": "string"}, "spec": {"type": "object", "properties": {"fields": {"type": "array", "items": {"type": "string"}}, "filter": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "not_null"]}, "value": {}}}}, "sort": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "dir": {"type": "string", "enum": ["asc", "desc"]}}}}, "group_by": {"type": "string"}, "aggregate": {"type": "object", "properties": {"op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}, "field": {"type": "string"}}}, "compare": {"type": "object", "properties": {"left_field": {"type": "string"}, "right_field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte"]}}}, "limit": {"type": "integer"}}}, "required": ["evidence_id", "spec"]}}),
     _spec("evidence_search", "Rechercher dans une preuve",
           "Recherche bornée (insensible à la casse) dans une preuve collectée : localise un enregistrement par identifiant métier ou sous-chaîne (records/lines/pickings/quants), champ optionnel. Hit redactés et traçables.",
           [], PermissionLevel.read, EvidenceSearchInput,
@@ -895,6 +964,7 @@ def register_all_tools(registry) -> dict[str, type[BaseModel]]:
         "data_profile": tool_data_profile,
         "data_validate": tool_data_validate,
         "evidence_join": tool_evidence_join,
+        "data_explore": tool_data_explore,
         "get_control_definition": tool_get_control_definition,
         "get_evidence_excerpt": tool_get_evidence_excerpt,
         "evidence_search": tool_evidence_search,

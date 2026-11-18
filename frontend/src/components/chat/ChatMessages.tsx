@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { BranchNode, ChatMsg } from '../../lib/chatApi'
 import { MarkdownView } from '../MarkdownView'
+import { ExplorationTable } from '../../features/data-exploration/ExplorationTable'
+import type { ExplorationResult } from '../../features/data-exploration/ExplorationTable'
 import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIntelligenceCard'
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
@@ -14,6 +16,7 @@ interface MessagesProps {
   onRegenerate: (assistantId: string) => void
   onEdit: (userMessageId: string, content: string) => void
   onSwitchBranch: (messageId: string) => void
+  onInvestigate?: (record: Record<string, unknown>) => void
 }
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {
@@ -176,6 +179,7 @@ function AssistantMessage({
   isRunning,
   onRegenerate,
   onSwitchBranch,
+  onInvestigate,
 }: {
   message: ChatMsg
   branches: BranchNode[]
@@ -183,19 +187,28 @@ function AssistantMessage({
   isRunning: boolean
   onRegenerate: (id: string) => void
   onSwitchBranch: (id: string) => void
+  onInvestigate?: (record: Record<string, unknown>) => void
 }) {
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
   const toolParts = message.parts.filter((p): p is Extract<ChatMsg['parts'][number], { type: 'tool_call' }> => p.type === 'tool_call')
   return (
     <div className="flex flex-col items-start">
       <div className="w-full rounded-2xl rounded-bl-md bg-slate-100/80 px-4 py-3">
-        {toolParts.map((p) =>
-          p.tool === 'inspect_source' && p.result && !p.result.status ? (
-            <SourceIntelligenceCard key={p.id} intel={p.result as unknown as SourceIntelligence} />
-          ) : (
-            <ToolCallCard key={p.id} part={p} />
-          ),
-        )}
+        {toolParts.map((p) => {
+          if (p.tool === 'inspect_source' && p.result && !p.result.status) {
+            return <SourceIntelligenceCard key={p.id} intel={p.result as unknown as SourceIntelligence} />
+          }
+          if (p.tool === 'data_explore' && p.result && !p.result.status && (p.result as { table?: unknown }).table) {
+            return (
+              <ExplorationTable
+                key={p.id}
+                result={p.result as unknown as ExplorationResult}
+                onInvestigate={onInvestigate}
+              />
+            )
+          }
+          return <ToolCallCard key={p.id} part={p} />
+        })}
         {text && (
           <div className="text-[15px] leading-relaxed text-slate-800 [&_p]:my-1.5 [&_li]:my-0.5">
             <MarkdownView markdown={text} />
@@ -236,6 +249,7 @@ export function ChatMessages({
   onRegenerate,
   onEdit,
   onSwitchBranch,
+  onInvestigate,
 }: MessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -264,6 +278,7 @@ export function ChatMessages({
             isRunning={isRunning}
             onRegenerate={onRegenerate}
             onSwitchBranch={onSwitchBranch}
+            onInvestigate={onInvestigate}
           />
         ),
       )}
