@@ -9,7 +9,7 @@ Format canonique des messages (traduit vers chaque API par l'adapter) :
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, AsyncIterator
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +41,12 @@ class LLMProvider(ABC):
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         """Un tour de conversation. tools = [{name, description, parameters(JSON schema)}]."""
+
+    async def stream_chat(
+        self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[str | LLMResponse]:
+        """Fallback explicite pour les providers sans streaming natif."""
+        yield await self.chat(system, messages, tools)
 
     async def close(self) -> None:
         return None

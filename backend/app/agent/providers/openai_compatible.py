@@ -7,7 +7,7 @@ provider/model doit passer la matrice de compatibilité avant usage réel.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -30,12 +30,14 @@ ZEN_USER_AGENT = "opencode/1.0.0"  # Cloudflare 1010 bloque les UA génériques 
 # Erreurs spécifiques OpenCode Zen → messages actionnables (FR)
 ZEN_ERROR_HINTS = {
     "Free usage limit": (
-        "Limite gratuite OpenCode Zen atteinte pour cette IP (quota anonyme quotidien des "
-        "modèles -free). Réessayez plus tard ou fournissez votre clé OpenCode Zen (console)."
+        "OpenCode a refusé la demande avec FreeUsageLimitError. Ce message ne permet pas "
+        "de déterminer le quota de votre compte ni la cause exacte. Les modèles de chat "
+        "gratuits sont réservés à OpenCode selon la documentation du fournisseur."
     ),
     "FreeUsageLimitError": (
-        "Limite gratuite OpenCode Zen atteinte pour cette IP (quota anonyme quotidien des "
-        "modèles -free). Réessayez plus tard ou fournissez votre clé OpenCode Zen (console)."
+        "OpenCode a refusé la demande avec FreeUsageLimitError. Ce message ne permet pas "
+        "de déterminer le quota de votre compte ni la cause exacte. Les modèles de chat "
+        "gratuits sont réservés à OpenCode selon la documentation du fournisseur."
     ),
     "api_key_expired": (
         "Clé OpenCode Zen expirée — générez une nouvelle clé API dans la console OpenCode "
@@ -133,6 +135,52 @@ class OpenAICompatibleProvider(LLMProvider):
                 "total_tokens": getattr(raw_usage, "total_tokens", 0) or 0,
             }
         return LLMResponse(content=content, tool_calls=tool_calls, input_chars=total_chars, usage=usage)
+
+    async def stream_chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[str | LLMResponse]:
+        kwargs: dict[str, Any] = {"model": self.model_id, "messages": self._map_messages(system, messages), "max_tokens": self._max_tokens, "stream": True}
+        if self._disable_thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        if tools:
+            kwargs["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in tools]
+        content: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        stream = None
+        try:
+            stream = await self._client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    content.append(delta.content)
+                    yield delta.content
+                for tc in delta.tool_calls or []:
+                    call = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                    if tc.id:
+                        call["id"] += tc.id
+                    if tc.function:
+                        call["name"] += tc.function.name or ""
+                        call["arguments"] += tc.function.arguments or ""
+            tool_calls = []
+            for index, call in sorted(calls.items()):
+                try:
+                    arguments = json.loads(call["arguments"] or "{}")
+                    if not isinstance(arguments, dict):
+                        raise ValueError("arguments d'outil non-object")
+                except (json.JSONDecodeError, ValueError) as exc:
+                    raise ProviderError(f"Arguments d'outil invalides: {exc}") from exc
+                if not call["name"]:
+                    raise ProviderError("Nom d'outil manquant dans le flux provider")
+                tool_calls.append({"id": call["id"] or f"call_{index}", "name": call["name"], "arguments": arguments})
+            yield LLMResponse(content="".join(content) or None, tool_calls=tool_calls,
+                              input_chars=len(system) + sum(len(str(m.get("content", ""))) for m in messages))
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(self._friendly_error(exc)) from exc
+        finally:
+            if stream is not None:
+                await stream.close()
 
     def _friendly_error(self, exc: Exception) -> str:
         """Traduit les erreurs provider en messages actionnables (ex. quota Zen)."""

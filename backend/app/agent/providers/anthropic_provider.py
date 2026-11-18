@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 
 from anthropic import AsyncAnthropic
 
@@ -81,3 +81,22 @@ class AnthropicProvider(LLMProvider):
                     "arguments": block.input if isinstance(block.input, dict) else {},
                 })
         return LLMResponse(content=content_text, tool_calls=tool_calls, input_chars=total_chars)
+
+    async def stream_chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[str | LLMResponse]:
+        kwargs: dict[str, Any] = {"model": self.model_id, "max_tokens": self._max_tokens, "system": system, "messages": self._map_messages(messages)}
+        if tools:
+            kwargs["tools"] = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in tools]
+        try:
+            async with self._client.messages.stream(**kwargs) as stream:
+                async for event in stream:
+                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                        yield event.delta.text
+                result = await stream.get_final_message()
+            text = "".join(block.text for block in result.content if block.type == "text")
+            calls = [{"id": block.id, "name": block.name, "arguments": block.input if isinstance(block.input, dict) else {}} for block in result.content if block.type == "tool_use"]
+            yield LLMResponse(content=text or None, tool_calls=calls, input_chars=len(system) + sum(len(str(m.get("content", ""))) for m in messages))
+        except Exception as exc:
+            raise ProviderError(f"anthropic/{self.model_id}: {type(exc).__name__}: {exc}") from exc
+
+    async def close(self) -> None:
+        await self._client.close()

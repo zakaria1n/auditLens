@@ -20,6 +20,10 @@ def resolve_llm_config(runtime_config: dict | None = None) -> dict:
         "api_key": env.get("api_key") or "",
     }
     if runtime_config:
+        if runtime_config.get("provider") and runtime_config["provider"] != cfg["provider"]:
+            # Ne jamais transmettre une clé ou une URL d'un autre fournisseur.
+            cfg["api_key"] = ""
+            cfg["base_url"] = None
         for key in ("provider", "model", "base_url", "api_key"):
             if runtime_config.get(key):
                 cfg[key] = runtime_config[key]
@@ -53,7 +57,8 @@ def build_provider(config: dict, scenario: str = "data_audit") -> LLMProvider:
         return AnthropicProvider(model=model or "claude-sonnet-4-5", api_key=api_key)
     if provider in ("openai", "deepseek", "gemini", "compatible", "opencode"):
         return OpenAICompatibleProvider(
-            provider=provider, model=model, api_key=api_key, base_url=config.get("base_url"),
+            provider=provider, model=model, api_key=api_key,
+            base_url=None if provider == "opencode" else config.get("base_url"),
             max_tokens=config.get("max_tokens"),
             disable_thinking=bool(config.get("disable_thinking")),
         )

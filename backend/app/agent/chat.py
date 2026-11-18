@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator
 from ..api.deps import AppDeps
 from ..audit.controls import control_to_dict, list_controls
 from ..agent.providers import build_provider, resolve_llm_config
+from ..agent.providers.base import LLMResponse
 from ..core.errors import ProviderError
 from ..core.ids import new_id
 from ..core.redact import redact
@@ -164,6 +165,14 @@ class ChatService:
             thread.head_message_id = user_msg.id
             thread.updated_at = utcnow()
             await repo.update_thread(thread)
+            if mode == "new" and len(all_msgs) == 0 and thread.title == "Nouvelle conversation":
+                title = content.strip().splitlines()[0][:80]
+                await repo.db.execute(
+                    "UPDATE conversation_threads SET title=? WHERE id=? AND workspace_id=? AND title=?",
+                    (title, thread.id, thread.workspace_id, "Nouvelle conversation"),
+                )
+                thread = await repo.get_thread(thread.id) or thread
+                yield {"type": "thread", "thread": thread.model_dump(mode="json")}
             yield {"type": "message", "message": user_msg.model_dump(mode="json")}
             yield {"type": "head", "head_message_id": thread.head_message_id}
 
@@ -178,6 +187,7 @@ class ChatService:
         # persisté d'emblée (status running) : un refresh pendant le tour montre l'état réel,
         # et toute sortie (annulation, déconnexion, erreur) ne fait qu'UPDATE ce message.
         await repo.create_chat_message(assistant)
+        yield {"type": "assistant_start", "message_id": assistant.id}
 
         try:
             # --- 2. couche 2 : chaîne active (root → parent) + compaction éventuelle
@@ -206,11 +216,32 @@ class ChatService:
                 if controls.get(thread.id) == "cancel":
                     cancelled = True
                     break
-                resp = await provider.chat(system, canon, tools=CHAT_TOOLS)
+                resp: LLMResponse | None = None
+                round_text: dict | None = None
+                async for item in provider.stream_chat(system, canon, tools=CHAT_TOOLS):
+                    if controls.get(thread.id) == "cancel":
+                        cancelled = True
+                        break
+                    if isinstance(item, str):
+                        if not item:
+                            continue
+                        if round_text is None:
+                            round_text = {"type": "text", "text": ""}
+                            assistant.parts.append(round_text)
+                        round_text["text"] += item
+                        yield {"type": "text_delta", "text": item}
+                    else:
+                        resp = item
+                if cancelled:
+                    break
+                if resp is None:
+                    raise ProviderError("Flux fournisseur interrompu avant la réponse finale")
+                if resp.content and round_text is None:
+                    round_text = {"type": "text", "text": resp.content}
+                    assistant.parts.append(round_text)
+                    yield {"type": "text_delta", "text": resp.content}
                 rounds += 1
                 if resp.tool_calls:
-                    if resp.content:
-                        assistant.parts.append({"type": "text", "text": resp.content})
                     canon.append({
                         "role": "assistant", "content": resp.content,
                         "tool_calls": [
@@ -257,8 +288,9 @@ class ChatService:
                               "redemandez-moi de continuer si nécessaire.")
 
             # --- 4. persistance du message assistant + déplacement du head
-            if final_text:
+            if final_text and (not assistant.parts or assistant.parts[-1].get("text") != final_text):
                 assistant.parts.append({"type": "text", "text": final_text})
+                yield {"type": "text_delta", "text": final_text}
             if error:
                 assistant.parts.append({"type": "text", "text": f"Erreur provider : {error}"})
             assistant.status = "incomplete" if cancelled else ("error" if error else "complete")
