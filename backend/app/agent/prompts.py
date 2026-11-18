@@ -39,7 +39,10 @@ FINDINGS_SCHEMA = {
 }
 
 
-def plan_request(mission_dict: dict, sources_payload: list[dict], capabilities: list[dict], controls: list[dict]) -> str:
+def plan_request(
+    mission_dict: dict, sources_payload: list[dict], capabilities: list[dict],
+    controls: list[dict], intelligence: dict[str, dict] | None = None,
+) -> str:
     payload = {
         "mission": {
             "id": mission_dict["id"], "objective": mission_dict["objective"],
@@ -51,6 +54,8 @@ def plan_request(mission_dict: dict, sources_payload: list[dict], capabilities: 
         "capabilities": capabilities,
         "controls": controls,
     }
+    if intelligence:
+        payload["source_intelligence"] = intelligence
     exact_tools = ", ".join(sorted({c["tool"] for c in capabilities}))
     return (
         "TASK: propose_plan\n"

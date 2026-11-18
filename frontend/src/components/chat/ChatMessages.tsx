@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { BranchNode, ChatMsg } from '../../lib/chatApi'
 import { MarkdownView } from '../MarkdownView'
+import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIntelligenceCard'
+import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
 
 interface MessagesProps {
@@ -187,9 +189,13 @@ function AssistantMessage({
   return (
     <div className="flex flex-col items-start">
       <div className="w-full rounded-2xl rounded-bl-md bg-slate-100/80 px-4 py-3">
-        {toolParts.map((p) => (
-          <ToolCallCard key={p.id} part={p} />
-        ))}
+        {toolParts.map((p) =>
+          p.tool === 'inspect_source' && p.result && !p.result.status ? (
+            <SourceIntelligenceCard key={p.id} intel={p.result as unknown as SourceIntelligence} />
+          ) : (
+            <ToolCallCard key={p.id} part={p} />
+          ),
+        )}
         {text && (
           <div className="text-[15px] leading-relaxed text-slate-800 [&_p]:my-1.5 [&_li]:my-0.5">
             <MarkdownView markdown={text} />

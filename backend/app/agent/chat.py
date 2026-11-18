@@ -20,6 +20,7 @@ from typing import Any, AsyncIterator
 
 from ..api.deps import AppDeps
 from ..audit.controls import control_to_dict, list_controls
+from ..audit.discovery import build_source_intelligence
 from ..agent.providers import build_provider, resolve_llm_config
 from ..agent.providers.base import LLMResponse
 from ..core.errors import ProviderError
@@ -29,6 +30,22 @@ from ..models import AuditMission, ChatMessage, ChatRole, ConversationThread, Mi
 from ..services.run_launcher import launch_run
 
 CHAT_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "inspect_source",
+        "description": (
+            "Découvrir UNE source autorisée en profondeur : état de connexion, capacités "
+            "réelles, domaines métier exposés, opérations supportées/non supportées, "
+            "permissions manquantes. À utiliser avant de proposer un audit ou quand "
+            "l'auditeur demande ce qu'une source permet."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "string", "description": "Identifiant de la source (issu de list_sources)."}
+            },
+            "required": ["source_id"],
+        },
+    },
     {
         "name": "list_sources",
         "description": "Lister les sources connectées accessibles (id, nom, type, statut). Aucun secret n'est retourné.",
@@ -452,6 +469,27 @@ class ChatService:
                 {"id": s.id, "name": s.name, "type": s.type.value, "status": s.status.value}
                 for s in sources
             ]}
+
+        if name == "inspect_source":
+            source_id = str(args.get("source_id") or "")
+            source = await repo.get_source(source_id)
+            if source is None:
+                return {"status": "error", "error": f"source inconnue : {source_id}"}
+            # lecture seule via le même connecteur que le harness ; Policy Gate inchangé
+            from ..audit.discovery import build_source_intelligence
+
+            try:
+                connector = d.connectors.build(source)
+                try:
+                    caps = await connector.discover()
+                finally:
+                    await connector.close()
+            except Exception as exc:  # noqa: BLE001 — échec de découverte = état "error"
+                caps = {"discover_error": f"{type(exc).__name__}: {exc}"}
+            mission = None
+            if thread.mission_ids:
+                mission = await repo.get_mission(thread.mission_ids[-1])
+            return build_source_intelligence(source, redact(caps), d.executor.registry, mission)
 
         if name == "create_audit":
             source_ids = [str(x) for x in args.get("source_ids", [])]

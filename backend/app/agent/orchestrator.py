@@ -204,6 +204,10 @@ class RunOrchestrator:
                 registry_capabilities = self.executor.registry.capabilities_for_mission(mission, source_types)
                 initial_evidence = await self.repo.list_evidence(mission_id=mission.id)
                 controls_list = [control_to_dict(c) for c in map(get_control, mission.control_ids) if c]
+                source_intelligence = self._intelligence_payload(sources, discovered, mission, self.executor.registry)
+                await self.bus.publish(run.id, "source_intelligence", {
+                    "intelligence": source_intelligence,
+                })
 
                 # ---- 2. Plan proposé par l'agent ----
                 await self.bus.publish(run.id, "phase", {"phase": "plan"})
@@ -212,6 +216,7 @@ class RunOrchestrator:
                     self._sources_payload(sources, initial_evidence, discovered),
                     registry_capabilities,
                     controls_list,
+                    intelligence=source_intelligence,
                 ))
                 plan = self._parse_plan(run.id, mission.id, plan_payload, provider)
                 await self.bus.publish(run.id, "plan", {"plan_id": plan.id, "steps": [s.model_dump() for s in plan.steps], "risks": plan.risks})
@@ -366,6 +371,23 @@ class RunOrchestrator:
                 "journeys": cfg.get("journeys", []) if s.type == "web" else [],
                 "discovered": redact(discovered_by_source.get(s.id)) if s.id in discovered_by_source else None,
             })
+        return out
+
+    def _intelligence_payload(
+        self, sources: dict[str, SourceConnection], discovered: list[dict],
+        mission: AuditMission, registry: ToolRegistry,
+    ) -> dict[str, dict[str, Any]]:
+        """Intelligence structurée par source (Phase 1) : capacités réelles, opérations
+        supportées/manquantes — le LLM de plan choisit ses tools sans rien inventer."""
+        from ..audit.discovery import build_source_intelligence
+
+        out: dict[str, dict[str, Any]] = {}
+        for d in discovered:
+            sid = d.get("source_id")
+            src = sources.get(sid)
+            if src is None:
+                continue
+            out[sid] = build_source_intelligence(src, d.get("capabilities") or {}, registry, mission)
         return out
 
     async def _chat_json(self, provider: LLMProvider, run: AuditRun, budget: Budget, prompt: str) -> dict:
