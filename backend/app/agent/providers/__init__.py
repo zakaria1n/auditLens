@@ -3,6 +3,7 @@ from .base import LLMProvider, LLMResponse, ProviderToolCall
 from .factory import build_provider, resolve_llm_config
 from .mock import MockLLMProvider
 from .openai_compatible import OpenAICompatibleProvider
+from .opencode_cli import OpenCodeCliProvider
 
 __all__ = [
     "AnthropicProvider",
@@ -11,6 +12,7 @@ __all__ = [
     "ProviderToolCall",
     "MockLLMProvider",
     "OpenAICompatibleProvider",
+    "OpenCodeCliProvider",
     "build_provider",
     "resolve_llm_config",
 ]

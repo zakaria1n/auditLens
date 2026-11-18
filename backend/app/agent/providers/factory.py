@@ -7,6 +7,7 @@ from .anthropic_provider import AnthropicProvider
 from .base import LLMProvider
 from .mock import MockLLMProvider
 from .openai_compatible import OpenAICompatibleProvider
+from .opencode_cli import OpenCodeCliProvider
 
 
 def resolve_llm_config(runtime_config: dict | None = None) -> dict:
@@ -41,6 +42,9 @@ def build_provider(config: dict, scenario: str = "data_audit") -> LLMProvider:
         # (endpoint public documenté, ~200 req/jour/IP — voir docs/21 ADR-10).
         api_key = api_key or "public"
         model = model or "glm-5.3-flash-free"
+    if provider == "opencode-cli":
+        # transport CLI OpenCode (même session que l'app utilisateur) : aucune clé requise
+        return OpenCodeCliProvider(model=model or "deepseek-v4.1-flash-free")
     if not api_key:
         raise ValueError(
             f"clé API manquante pour le provider '{provider}' — configurer BYOK (Settings > AI Model) ou AUDITLENS_LLM_KEY"

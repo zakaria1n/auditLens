@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import urllib.request
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ...agent.providers import build_provider, resolve_llm_config
+from ...agent.providers.openai_compatible import ZEN_CATALOG_URL, ZEN_USER_AGENT
 from ...core.errors import ProviderError
 from ..deps import deps
 
@@ -32,8 +36,8 @@ async def get_llm_config(request: Request):
         "base_url": cfg.get("base_url"),
         "key_configured": bool(cfg.get("api_key")) or cfg["provider"] in ("mock", "opencode"),
         "source": "runtime" if d.llm_runtime.get("provider") else ("env" if env_cfg.get("provider") not in (None, "mock") else "default"),
-        "providers_available": ["mock", "opencode", "openai", "gemini", "anthropic", "deepseek", "compatible"],
-        "note": "BYOK : la clé reste en mémoire backend, jamais loggée ni renvoyée. OpenCode Zen : modèles -free anonymes (~200 req/jour/IP).",
+        "providers_available": ["mock", "opencode", "opencode-cli", "openai", "gemini", "anthropic", "deepseek", "compatible"],
+        "note": "BYOK : la clé reste en mémoire backend, jamais loggée ni renvoyée. opencode-cli = modeles FREE OpenCode via votre app/CLI local (aucune cle ; ~10-20 s/appel). opencode (REST) requiert une cle Zen valide.",
     }
 
 
@@ -81,3 +85,35 @@ async def test_llm_config(request: Request, body: LLMConfigBody | None = None):
         return {"ok": False, "provider": cfg["provider"], "error": str(exc)}
     finally:
         await provider.close()
+
+
+@router.get("/opencode/models")
+async def list_opencode_free_models(api_key: str | None = None):
+    """Catalogue LIVE des modèles OpenCode Zen accessibles (clé "public" par défaut,
+    ou clé BYOK fournie). Ne renvoie que les modèles chat supportant les tool calls —
+    condition du harness (docs/05). Aucune clé n'est persistée ni journalisée."""
+    key = api_key or "public"
+    req = urllib.request.Request(ZEN_CATALOG_URL, headers={
+        "Authorization": f"Bearer {key}", "User-Agent": ZEN_USER_AGENT,
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read()).get("data", [])
+    except Exception as exc:  # noqa: BLE001 — liste indisponible = message clair, pas de mock
+        return {"ok": False, "error": f"catalogue indisponible : {exc}", "models": []}
+    models = []
+    for m in data:
+        caps = m.get("capabilities", {})
+        if m.get("type") != "chat" or not caps.get("tools", {}).get("supported"):
+            continue
+        mid = m["id"]
+        # uniquement les modèles gratuits : suffixe -free + big-pickle (raisonnement price 0)
+        if not (mid.endswith("-free") or mid == "big-pickle"):
+            continue
+        models.append({
+            "id": mid,
+            "name": m.get("name", mid),
+            "context": m.get("limit", {}).get("context"),
+            "structured_output": bool(caps.get("structured_output", False)),
+        })
+    return {"ok": True, "models": models}

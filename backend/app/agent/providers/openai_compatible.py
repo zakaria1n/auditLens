@@ -19,18 +19,30 @@ DEFAULT_BASE_URLS = {
     "deepseek": "https://api.deepseek.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "compatible": None,
-    "opencode": "https://opencode.ai/zen/v1",  # OpenCode Zen — modèles -free (api_key "public")
+    # OpenCode Zen — l'INFÉRENCE passe par /inference/openai/v1 (métadonnée `api` de chaque
+    # modèle) ; /zen/v1 reste l'endpoint du catalogue (/models). Clé "public" = quota
+    # anonyme journalier pour les modèles `-free`, clé personnelle = quota du compte.
+    "opencode": "https://opencode.ai/inference/openai/v1",
 }
+ZEN_CATALOG_URL = "https://opencode.ai/zen/v1/models"
+ZEN_USER_AGENT = "opencode/1.0.0"  # Cloudflare 1010 bloque les UA génériques type urllib
 
 # Erreurs spécifiques OpenCode Zen → messages actionnables (FR)
 ZEN_ERROR_HINTS = {
     "Free usage limit": (
-        "Limite gratuite OpenCode Zen atteinte pour cette IP (~200 requêtes/jour). "
-        "Réessayez plus tard (quota quotidien) ou fournissez une clé OpenCode Zen payante."
+        "Limite gratuite OpenCode Zen atteinte pour cette IP (quota anonyme quotidien des "
+        "modèles -free). Réessayez plus tard ou fournissez votre clé OpenCode Zen (console)."
     ),
     "FreeUsageLimitError": (
-        "Limite gratuite OpenCode Zen atteinte pour cette IP (~200 requêtes/jour). "
-        "Réessayez plus tard (quota quotidien) ou fournissez une clé OpenCode Zen payante."
+        "Limite gratuite OpenCode Zen atteinte pour cette IP (quota anonyme quotidien des "
+        "modèles -free). Réessayez plus tard ou fournissez votre clé OpenCode Zen (console)."
+    ),
+    "api_key_expired": (
+        "Clé OpenCode Zen expirée — générez une nouvelle clé API dans la console OpenCode "
+        "et resaisissez-la dans Réglages IA (BYOK)."
+    ),
+    "Error code: 1010": (
+        "Requête bloquée par Cloudflare (User-Agent refusé) — mettre à jour AuditLens."
     ),
 }
 
@@ -46,6 +58,9 @@ class OpenAICompatibleProvider(LLMProvider):
         kwargs: dict[str, Any] = {"api_key": api_key}
         if url:
             kwargs["base_url"] = url
+        if provider == "opencode":
+            # Cloudflare rejette les UA SDK génériques (1010) : UA applicatif obligatoire
+            kwargs["default_headers"] = {"User-Agent": ZEN_USER_AGENT}
         self._client = AsyncOpenAI(**kwargs)
         # Les modèles de raisonnement consomment ce budget AVANT `content` (docs Z_API_FREE) :
         # 8192 par défaut + fallback sur reasoning_content + option disable_thinking.
