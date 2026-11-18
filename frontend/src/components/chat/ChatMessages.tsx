@@ -6,6 +6,7 @@ import { ExplorationTable } from '../../features/data-exploration/ExplorationTab
 import type { ExplorationResult } from '../../features/data-exploration/ExplorationTable'
 import { CorrelationGraph } from '../../features/relationships/CorrelationGraph'
 import type { CorrelationResult } from '../../features/relationships/CorrelationGraph'
+import { RelatedInvestigations } from '../../features/investigation-memory/RelatedInvestigations'
 import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIntelligenceCard'
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
@@ -19,6 +20,7 @@ interface MessagesProps {
   onEdit: (userMessageId: string, content: string) => void
   onSwitchBranch: (messageId: string) => void
   onInvestigate?: (record: Record<string, unknown>) => void
+  onOpenThread?: (threadId: string) => void
 }
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {
@@ -182,6 +184,7 @@ function AssistantMessage({
   onRegenerate,
   onSwitchBranch,
   onInvestigate,
+  onOpenThread,
 }: {
   message: ChatMsg
   branches: BranchNode[]
@@ -190,6 +193,7 @@ function AssistantMessage({
   onRegenerate: (id: string) => void
   onSwitchBranch: (id: string) => void
   onInvestigate?: (record: Record<string, unknown>) => void
+  onOpenThread?: (threadId: string) => void
 }) {
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
   const toolParts = message.parts.filter((p): p is Extract<ChatMsg['parts'][number], { type: 'tool_call' }> => p.type === 'tool_call')
@@ -211,6 +215,9 @@ function AssistantMessage({
           }
           if (p.tool === 'correlate_records' && p.result && !p.result.status && (p.result as { links?: unknown }).links) {
             return <CorrelationGraph key={p.id} result={p.result as unknown as CorrelationResult} />
+          }
+          if (p.tool === 'search_investigations' && p.result && !p.result.status) {
+            return <RelatedInvestigations key={p.id} result={p.result as never} onOpenThread={onOpenThread} />
           }
           return <ToolCallCard key={p.id} part={p} />
         })}
@@ -255,6 +262,7 @@ export function ChatMessages({
   onEdit,
   onSwitchBranch,
   onInvestigate,
+  onOpenThread,
 }: MessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -284,6 +292,7 @@ export function ChatMessages({
             onRegenerate={onRegenerate}
             onSwitchBranch={onSwitchBranch}
             onInvestigate={onInvestigate}
+            onOpenThread={onOpenThread}
           />
         ),
       )}

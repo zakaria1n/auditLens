@@ -100,6 +100,22 @@ CHAT_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "search_investigations",
+        "description": (
+            "MÉMOIRE D'AUDIT : rechercher dans les investigations ANTÉRIEURES (findings "
+            "de toutes les missions) par mot-clé. Retourne des références horodatées avec "
+            "statut de revue et liens preuve/conversation. Résultats = mémoire non vérifiée : "
+            "toute conclusion factuelle exige get_evidence sur la preuve d'origine."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Mot-clé (titre/énoncé/contrôle du constat)."}
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_conversation",
         "description": (
             "Rechercher dans l'historique COMPLET de cette conversation (y compris la partie "
@@ -589,6 +605,26 @@ class ChatService:
                     }
             return {"status": "error",
                     "error": "preuve inconnue ou hors périmètre de cette conversation"}
+
+        if name == "search_investigations":
+            from ..audit.memory import build_memory_results
+
+            query = str(args.get("query") or "").strip()
+            if not query:
+                return {"status": "error", "error": "query requise"}
+            findings = await repo.list_findings()  # toutes missions (mono-utilisateur local)
+            missions_by_id = {m.id: m for m in await repo.list_missions()}
+            threads_by_run: dict[str, str] = {}
+            for t in await repo.list_threads():
+                for rid in t.run_ids:
+                    threads_by_run[rid] = t.id
+            results = build_memory_results(query, findings, missions_by_id, threads_by_run)
+            return {
+                "query": query,
+                "results": results,
+                "warning": ("mémoire non vérifiée : toute conclusion factuelle exige get_evidence "
+                            "sur la preuve d'origine de l'investigation antérieure"),
+            }
 
         if name == "search_conversation":
             query = str(args.get("query") or "").strip()
