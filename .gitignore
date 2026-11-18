@@ -32,3 +32,6 @@ frontend/dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Documentation locale (exclue du repo à la demande)
+/docs/
