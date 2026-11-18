@@ -4,6 +4,8 @@ import type { BranchNode, ChatMsg } from '../../lib/chatApi'
 import { MarkdownView } from '../MarkdownView'
 import { ExplorationTable } from '../../features/data-exploration/ExplorationTable'
 import type { ExplorationResult } from '../../features/data-exploration/ExplorationTable'
+import { CorrelationGraph } from '../../features/relationships/CorrelationGraph'
+import type { CorrelationResult } from '../../features/relationships/CorrelationGraph'
 import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIntelligenceCard'
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
@@ -206,6 +208,9 @@ function AssistantMessage({
                 onInvestigate={onInvestigate}
               />
             )
+          }
+          if (p.tool === 'correlate_records' && p.result && !p.result.status && (p.result as { links?: unknown }).links) {
+            return <CorrelationGraph key={p.id} result={p.result as unknown as CorrelationResult} />
           }
           return <ToolCallCard key={p.id} part={p} />
         })}

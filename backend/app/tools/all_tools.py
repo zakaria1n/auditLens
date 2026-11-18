@@ -92,6 +92,21 @@ class DataExploreInput(BaseModel):
     )
 
 
+class CorrelateRecordsInput(BaseModel):
+    evidence_ids: list[str] = Field(min_length=2, max_length=2)
+    left_key: str
+    right_key: str
+    compare_fields: list[dict] = Field(
+        default_factory=list,
+        description="champs comparés numériquement quand un lien existe : [{left, right}]",
+    )
+    normalize: bool = Field(
+        default=False,
+        description="correspondance exacte après normalisation (casse/espaces) => statut uncertain",
+    )
+    label: str | None = None
+
+
 class EvidenceSearchInput(BaseModel):
     evidence_id: str
     query: str = Field(min_length=1, max_length=200, description="texte ou identifiant à rechercher (insensible à la casse)")
@@ -796,6 +811,55 @@ async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
     )
 
 
+async def tool_correlate_records(ctx: ToolContext, args: dict) -> ToolResult:
+    """Corrélation cross-système GÉNÉRIQUE (Phase 3/10) : résolution d'entités par clés
+    explicites entre deux evidences d'enregistrements — matched / uncertain (clé
+    normalisée) / unmatched / conflicting (écart de valeurs comparées). Aucune
+    correspondance inventée : chaque lien cite les evidences et row_index."""
+    from ..audit.correlation import correlate
+
+    ev_left, full_left = await _load_evidence(ctx, args["evidence_ids"][0])
+    ev_right, full_right = await _load_evidence(ctx, args["evidence_ids"][1])
+    left_records = _records_from_payload(full_left)
+    right_records = _records_from_payload(full_right)
+    if not left_records or not right_records:
+        return ToolResult(
+            tool_call_id="", tool="correlate_records",
+            status="insufficient_evidence",
+            error="correlate_records requiert deux evidences d'enregistrements non vides",
+        )
+    for side, key, rec in (("left_key", args["left_key"], left_records),
+                           ("right_key", args["right_key"], right_records)):
+        if key not in rec[0]:
+            return ToolResult(
+                tool_call_id="", tool="correlate_records", status="error",
+                error=f"{side}={key!r} absent des champs disponibles "
+                      f"({', '.join(sorted(rec[0].keys()))})",
+            )
+    result = correlate(
+        left_records, right_records, args["left_key"], args["right_key"],
+        left_label=ev_left.title, right_label=ev_right.title,
+        left_evidence_id=ev_left.id, right_evidence_id=ev_right.id,
+        compare_fields=args.get("compare_fields") or [],
+        normalize=bool(args.get("normalize")),
+    )
+    result["mission_id"] = ctx.mission.id
+    new_ev = ctx.store.save(
+        mission_id=ctx.mission.id, run_id=ctx.run_id, source_id=ev_left.source_id,
+        type_="correlation", title=f"Corrélation — {ev_left.title} × {ev_right.title}",
+        payload={"correlation": result, "spec": args},
+        provenance={"tool": "correlate_records", "left": ev_left.id, "right": ev_right.id},
+        record_count=result["stats"]["matched"] + result["stats"]["uncertain"],
+        summary={"stats": result["stats"], "conflicts": result["conflicts"][:10]},
+        evidence_id=new_id("evidence"),
+    )
+    await ctx.repo.create_evidence_meta(new_ev)
+    return ToolResult(
+        tool_call_id="", tool="correlate_records", source_id=ev_left.source_id,
+        status="success", evidence_ids=[new_ev.id], preview=redact(result),
+    )
+
+
 async def tool_evidence_search(ctx: ToolContext, args: dict) -> ToolResult:
     """Recherche bornée DANS une preuve collectée (aucun accès externe, docs/14).
 
@@ -939,6 +1003,10 @@ TOOL_DEFS: list[dict] = [
           "Exploration bornée et DÉTERMINISTE d'une evidence d'enregistrements : filtre, tri, group_by+agrégat (count/sum/avg/min/max), comparaison de champs, projection, limite. Spéc JSON typée — calculs exécutés par le backend, jamais par le modèle.",
           [], PermissionLevel.local, DataExploreInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "spec": {"type": "object", "properties": {"fields": {"type": "array", "items": {"type": "string"}}, "filter": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "not_null"]}, "value": {}}}}, "sort": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "dir": {"type": "string", "enum": ["asc", "desc"]}}}}, "group_by": {"type": "string"}, "aggregate": {"type": "object", "properties": {"op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}, "field": {"type": "string"}}}, "compare": {"type": "object", "properties": {"left_field": {"type": "string"}, "right_field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte"]}}}, "limit": {"type": "integer"}}}, "required": ["evidence_id", "spec"]}}),
+    _spec("correlate_records", "Corréler deux systèmes",
+          "Résolution d'entités GÉNÉRIQUE entre deux evidences d'enregistrements par clés explicites : liens matched/uncertain, non-correspondances, contradictions de valeurs comparées. Chaque lien cite les evidences et row_index — aucune relation inventée.",
+          [], PermissionLevel.local, CorrelateRecordsInput,
+          {"type": "object", "properties": {"evidence_ids": {"type": "array", "items": {"type": "string"}}, "left_key": {"type": "string"}, "right_key": {"type": "string"}, "compare_fields": {"type": "array", "items": {"type": "object", "properties": {"left": {"type": "string"}, "right": {"type": "string"}}}}, "normalize": {"type": "boolean"}, "label": {"type": "string"}}, "required": ["evidence_ids", "left_key", "right_key"]}),
     _spec("evidence_search", "Rechercher dans une preuve",
           "Recherche bornée (insensible à la casse) dans une preuve collectée : localise un enregistrement par identifiant métier ou sous-chaîne (records/lines/pickings/quants), champ optionnel. Hit redactés et traçables.",
           [], PermissionLevel.read, EvidenceSearchInput,
@@ -965,6 +1033,7 @@ def register_all_tools(registry) -> dict[str, type[BaseModel]]:
         "data_validate": tool_data_validate,
         "evidence_join": tool_evidence_join,
         "data_explore": tool_data_explore,
+        "correlate_records": tool_correlate_records,
         "get_control_definition": tool_get_control_definition,
         "get_evidence_excerpt": tool_get_evidence_excerpt,
         "evidence_search": tool_evidence_search,
