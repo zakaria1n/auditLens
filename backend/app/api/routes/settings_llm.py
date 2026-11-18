@@ -6,7 +6,7 @@ import json
 import urllib.request
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from ...agent.providers import build_provider, resolve_llm_config
 from ...agent.providers.openai_compatible import ZEN_CATALOG_URL, ZEN_USER_AGENT
@@ -25,6 +25,32 @@ class LLMConfigBody(BaseModel):
     disable_thinking: bool | None = None  # optionnel (Z.AI/GLM : réponse directe sans raisonnement)
 
 
+class ModelSelectionBody(BaseModel):
+    provider: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=200)
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Le modèle ne peut pas être vide")
+        return value
+
+
+@router.patch("/model")
+async def select_model(body: ModelSelectionBody, request: Request):
+    d = deps(request)
+    current = resolve_llm_config(d.llm_runtime)
+    if current["provider"] != body.provider:
+        raise HTTPException(409, "Le fournisseur actif a changé. Rechargez la sélection.")
+    if body.provider == "mock" and body.model != current["model"]:
+        raise HTTPException(400, "Le provider mock utilise son modèle de test configuré.")
+    # Ne remplacer ni clé, ni URL, ni autres options du fournisseur actif.
+    d.llm_runtime["model"] = body.model
+    return {"provider": body.provider, "model": body.model}
+
+
 @router.get("")
 async def get_llm_config(request: Request):
     d = deps(request)
@@ -34,7 +60,7 @@ async def get_llm_config(request: Request):
         "provider": cfg["provider"],
         "model": cfg["model"],
         "base_url": cfg.get("base_url"),
-        "key_configured": bool(cfg.get("api_key")) or cfg["provider"] in ("mock", "opencode"),
+        "key_configured": bool(cfg.get("api_key")),
         "source": "runtime" if d.llm_runtime.get("provider") else ("env" if env_cfg.get("provider") not in (None, "mock") else "default"),
         "providers_available": ["mock", "opencode", "opencode-cli", "openai", "gemini", "anthropic", "deepseek", "compatible"],
         "note": "BYOK : la clé reste en mémoire backend, jamais loggée ni renvoyée. opencode-cli = modeles FREE OpenCode via votre app/CLI local (aucune cle ; ~10-20 s/appel). opencode (REST) requiert une cle Zen valide.",
@@ -44,12 +70,16 @@ async def get_llm_config(request: Request):
 @router.put("")
 async def set_llm_config(body: LLMConfigBody, request: Request):
     d = deps(request)
+    previous = resolve_llm_config(d.llm_runtime)
+    api_key = body.api_key if body.api_key is not None else (
+        previous.get("api_key", "") if previous.get("provider") == body.provider else ""
+    )
     d.llm_runtime.clear()
     d.llm_runtime.update({
         "provider": body.provider,
         "model": body.model,
-        "base_url": body.base_url,
-        "api_key": body.api_key or "",
+        "base_url": None if body.provider == "opencode" else body.base_url,
+        "api_key": api_key,
         "max_tokens": body.max_tokens,
         "disable_thinking": body.disable_thinking,
     })
@@ -61,9 +91,14 @@ async def test_llm_config(request: Request, body: LLMConfigBody | None = None):
     """Test provider sans exposer la clé (docs/14). Mock => ok immédiat."""
     d = deps(request)
     if body is not None:
+        previous = resolve_llm_config(d.llm_runtime)
+        api_key = body.api_key if body.api_key is not None else (
+            previous.get("api_key", "") if previous.get("provider") == body.provider else ""
+        )
         cfg = {
             "provider": body.provider, "model": body.model,
-            "base_url": body.base_url, "api_key": body.api_key or "",
+            "base_url": None if body.provider == "opencode" else body.base_url,
+            "api_key": api_key,
         }
     else:
         cfg = resolve_llm_config(d.llm_runtime)

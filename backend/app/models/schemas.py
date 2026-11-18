@@ -338,6 +338,7 @@ class ConversationThread(BaseModel):
     id: str
     workspace_id: str = "ws_default"
     title: str
+    pinned: bool = False
     head_message_id: str | None = None
     mission_ids: list[str] = Field(default_factory=list)  # missions créées dans ce thread
     run_ids: list[str] = Field(default_factory=list)

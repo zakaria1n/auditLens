@@ -423,7 +423,7 @@ class Repository:
 
     def _row_to_thread(self, r: Any) -> ConversationThread:
         return ConversationThread(
-            id=r["id"], workspace_id=r["workspace_id"], title=r["title"],
+            id=r["id"], workspace_id=r["workspace_id"], title=r["title"], pinned=bool(r["pinned"]),
             head_message_id=r["head_message_id"], mission_ids=json.loads(r["mission_ids"]),
             run_ids=json.loads(r["run_ids"]), context_summary=r["context_summary"],
             summary_upto_message_id=r["summary_upto_message_id"],

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from ..audit.controls import CONTROL_CATALOG, control_to_dict, get_control
 from ..audit.rules import RULE_SETS, evaluate_rule_set, get_rule_set, profile_dataframe
 from ..connectors.files.connector import FileConnector
+from ..connectors.ssrf import validate_url
 from ..core.errors import EvidenceNotFound
 from ..core.ids import new_id
 from ..core.redact import redact
@@ -345,6 +346,7 @@ async def tool_api_inspect_contract(ctx: ToolContext, args: dict) -> ToolResult:
         spec_url = source.config.get("openapi_url")
         if spec_url:
             try:
+                validate_url(str(spec_url), connector.allowed_hosts, allow_private=connector.allow_private)
                 async with httpx.AsyncClient(timeout=connector.timeout, follow_redirects=False) as client:
                     spec_resp = await client.get(spec_url)
                 if spec_resp.status_code == 200:

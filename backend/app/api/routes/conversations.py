@@ -10,7 +10,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from ...agent.chat import ChatService
 from ...core.ids import new_id
@@ -22,6 +22,20 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 class ThreadCreate(BaseModel):
     title: str | None = None
+
+
+class ThreadUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    pinned: bool | None = None
+
+    @field_validator("title")
+    @classmethod
+    def valid_title(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Le titre ne peut pas être vide")
+        return value
 
 
 class HeadBody(BaseModel):
@@ -49,7 +63,7 @@ async def list_threads(request: Request):
     return {
         "threads": [
             {
-                "id": t.id, "title": t.title, "status": t.status.value,
+                "id": t.id, "title": t.title, "pinned": t.pinned, "status": t.status.value,
                 "head_message_id": t.head_message_id, "mission_ids": t.mission_ids,
                 "run_ids": t.run_ids, "updated_at": t.updated_at,
                 "compacted_message_count": t.compacted_message_count,
@@ -86,6 +100,23 @@ async def get_thread(thread_id: str, request: Request):
         "thread": thread.model_dump(mode="json"),
         "messages": [m.model_dump(mode="json") for m in chain],
     }
+
+
+@router.patch("/{thread_id}")
+async def update_thread_metadata(thread_id: str, body: ThreadUpdate, request: Request):
+    d = deps(request)
+    thread = await _get_thread_or_404(request, thread_id)
+    if thread.status == ConversationStatus.deleted:
+        raise HTTPException(410, "conversation supprimée")
+    # Colonnes indépendantes : ne pas écraser le head ou les liens d'un run actif.
+    if body.title is not None:
+        await d.repo.db.execute("UPDATE conversation_threads SET title=? WHERE id=? AND workspace_id=?",
+                                (body.title, thread.id, thread.workspace_id))
+    if body.pinned is not None:
+        await d.repo.db.execute("UPDATE conversation_threads SET pinned=? WHERE id=? AND workspace_id=?",
+                                (int(body.pinned), thread.id, thread.workspace_id))
+    updated = await d.repo.get_thread(thread_id)
+    return {"thread": updated.model_dump(mode="json")}
 
 
 @router.get("/{thread_id}/branches")

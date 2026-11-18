@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS conversation_threads (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
     title TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0,
     head_message_id TEXT,
     mission_ids TEXT NOT NULL,
     run_ids TEXT NOT NULL,
@@ -185,6 +186,11 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA foreign_keys=ON")
         await self._conn.executescript(SCHEMA)
+        # Migration additive pour les bases créées avant l'épinglage.
+        async with self._conn.execute("PRAGMA table_info(conversation_threads)") as cursor:
+            columns = {row[1] for row in await cursor.fetchall()}
+        if "pinned" not in columns:
+            await self._conn.execute("ALTER TABLE conversation_threads ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
         await self._conn.commit()
 
     async def close(self) -> None:

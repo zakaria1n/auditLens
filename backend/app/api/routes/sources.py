@@ -73,11 +73,11 @@ async def create_source(body: SourceCreate, request: Request):
 async def upload_file_source(request: Request, file: UploadFile, name: str | None = None, rule_set_id: str | None = None):
     """Upload CSV/XLSX/JSON → source + première evidence (docs/09 workflow)."""
     d = deps(request)
-    original_name = file.filename or "fichier"
+    original_name = (file.filename or "fichier").replace("\\", "/").rsplit("/", 1)[-1]
     suffix = Path(original_name).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"extension non autorisée {suffix} (autorisées: {ALLOWED_EXTENSIONS})")
-    content = await file.read()
+    content = await file.read(MAX_UPLOAD_MB * 1024 * 1024 + 1)
     if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"fichier trop gros (max {MAX_UPLOAD_MB} Mo)")
 

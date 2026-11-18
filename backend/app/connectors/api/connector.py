@@ -80,6 +80,7 @@ class RestApiConnector:
         }
         if self.openapi_url:
             try:
+                validate_url(str(self.openapi_url), self.allowed_hosts, allow_private=self.allow_private)
                 async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
                     resp = await client.get(self.openapi_url)
                 if resp.status_code == 200 and "json" in resp.headers.get("content-type", ""):
