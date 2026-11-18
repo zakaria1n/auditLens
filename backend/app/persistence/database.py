@@ -139,6 +139,36 @@ CREATE TABLE IF NOT EXISTS investigation_checkpoints (
 );
 
 CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON investigation_checkpoints(run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS conversation_threads (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    head_message_id TEXT,
+    mission_ids TEXT NOT NULL,
+    run_ids TEXT NOT NULL,
+    context_summary TEXT,
+    summary_upto_message_id TEXT,
+    compacted_message_count INTEGER DEFAULT 0,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    parent_id TEXT,
+    role TEXT NOT NULL,
+    parts TEXT NOT NULL,
+    status TEXT NOT NULL,
+    run_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, created_at);
 """
 
 

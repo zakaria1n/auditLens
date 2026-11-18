@@ -28,6 +28,7 @@ class AppDeps:
         self.input_models: dict = s.input_models
         self.llm_runtime: dict = s.llm_runtime
         self.run_controls: dict = s.run_controls  # ADR-15 : demandes pause/stop
+        self.chat_controls: dict = s.chat_controls  # ADR-16 : annulation tour chat
         self.run_semaphore = s.run_semaphore
         self.tasks: set = s.background_tasks
 

@@ -9,6 +9,10 @@ from pydantic import BaseModel
 
 from ..models import (
     Assessment,
+    ChatMessage,
+    ChatRole,
+    ConversationStatus,
+    ConversationThread,
     AuditMission,
     AuditRun,
     InvestigationCheckpoint,
@@ -306,6 +310,20 @@ class Repository:
         return [_row_to_finding(r) for r in rows]
 
     # ---------- Reports ----------
+    async def list_reports(self) -> list[ReportSnapshot]:
+        rows = await self.db.query_all("SELECT * FROM reports ORDER BY created_at DESC, version DESC")
+        return [ReportSnapshot.model_validate_json(r["payload"]) for r in rows]
+
+    async def find_thread_by_run(self, run_id: str) -> ConversationThread | None:
+        like = f"%{run_id}%"
+        rows = await self.db.query_all(
+            "SELECT * FROM conversation_threads WHERE run_ids LIKE ? AND status!='deleted' LIMIT 1",
+            (like,),
+        )
+        if not rows:
+            return None
+        return self._row_to_thread(rows[0])
+
     async def create_report(self, r: ReportSnapshot) -> None:
         await self.db.execute(
             "INSERT INTO reports VALUES (?,?,?,?,?,?)",
@@ -363,6 +381,96 @@ class Repository:
         return InvestigationCheckpoint(
             id=r["id"], run_id=r["run_id"], mission_id=r["mission_id"],
             reason=r["reason"], state=json.loads(r["state"]), created_at=r["created_at"],
+        )
+
+    # ---------------- Conversations (ADR-16, couche 1) ----------------
+
+    async def create_thread(self, t: ConversationThread) -> None:
+        await self.db.execute(
+            "INSERT INTO conversation_threads (id, workspace_id, title, head_message_id, mission_ids, "
+            "run_ids, context_summary, summary_upto_message_id, compacted_message_count, status, "
+            "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (t.id, t.workspace_id, t.title, t.head_message_id, json.dumps(t.mission_ids),
+             json.dumps(t.run_ids), t.context_summary, t.summary_upto_message_id,
+             t.compacted_message_count, t.status.value, t.created_at, t.updated_at),
+        )
+
+    async def get_thread(self, thread_id: str, workspace_id: str = "ws_default") -> ConversationThread | None:
+        rows = await self.db.query_all(
+            "SELECT * FROM conversation_threads WHERE id=? AND workspace_id=?", (thread_id, workspace_id),
+        )
+        if not rows:
+            return None
+        return self._row_to_thread(rows[0])
+
+    async def list_threads(self, workspace_id: str = "ws_default", include_archived: bool = True) -> list[ConversationThread]:
+        sql = "SELECT * FROM conversation_threads WHERE workspace_id=? AND status!='deleted' ORDER BY updated_at DESC"
+        rows = await self.db.query_all(sql, (workspace_id,))
+        threads = [self._row_to_thread(r) for r in rows]
+        if not include_archived:
+            threads = [t for t in threads if t.status.value == "active"]
+        return threads
+
+    async def update_thread(self, t: ConversationThread) -> None:
+        await self.db.execute(
+            "UPDATE conversation_threads SET title=?, head_message_id=?, mission_ids=?, run_ids=?, "
+            "context_summary=?, summary_upto_message_id=?, compacted_message_count=?, status=?, updated_at=? "
+            "WHERE id=?",
+            (t.title, t.head_message_id, json.dumps(t.mission_ids), json.dumps(t.run_ids),
+             t.context_summary, t.summary_upto_message_id, t.compacted_message_count,
+             t.status.value, utcnow(), t.id),
+        )
+
+    def _row_to_thread(self, r: Any) -> ConversationThread:
+        return ConversationThread(
+            id=r["id"], workspace_id=r["workspace_id"], title=r["title"],
+            head_message_id=r["head_message_id"], mission_ids=json.loads(r["mission_ids"]),
+            run_ids=json.loads(r["run_ids"]), context_summary=r["context_summary"],
+            summary_upto_message_id=r["summary_upto_message_id"],
+            compacted_message_count=int(r["compacted_message_count"] or 0),
+            status=ConversationStatus(r["status"]), created_at=r["created_at"], updated_at=r["updated_at"],
+        )
+
+    async def create_chat_message(self, m: ChatMessage) -> None:
+        await self.db.execute(
+            "INSERT INTO chat_messages (id, thread_id, parent_id, role, parts, status, run_id, "
+            "provider_id, model_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (m.id, m.thread_id, m.parent_id, m.role.value, json.dumps(m.parts, ensure_ascii=False),
+             m.status, m.run_id, m.provider_id, m.model_id, m.created_at),
+        )
+
+    async def get_chat_message(self, message_id: str) -> ChatMessage | None:
+        rows = await self.db.query_all("SELECT * FROM chat_messages WHERE id=?", (message_id,))
+        if not rows:
+            return None
+        return self._row_to_chat_message(rows[0])
+
+    async def update_chat_message(self, m: ChatMessage) -> None:
+        await self.db.execute(
+            "UPDATE chat_messages SET parts=?, status=?, run_id=?, provider_id=?, model_id=? WHERE id=?",
+            (json.dumps(m.parts, ensure_ascii=False), m.status, m.run_id, m.provider_id, m.model_id, m.id),
+        )
+
+    async def list_thread_messages(self, thread_id: str) -> list[ChatMessage]:
+        rows = await self.db.query_all(
+            "SELECT * FROM chat_messages WHERE thread_id=? ORDER BY created_at, rowid", (thread_id,),
+        )
+        return [self._row_to_chat_message(r) for r in rows]
+
+    async def search_thread_messages(self, thread_id: str, query: str, limit: int = 10) -> list[ChatMessage]:
+        like = f"%{query}%"
+        rows = await self.db.query_all(
+            "SELECT * FROM chat_messages WHERE thread_id=? AND parts LIKE ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (thread_id, like, limit),
+        )
+        return [self._row_to_chat_message(r) for r in rows]
+
+    def _row_to_chat_message(self, r: Any) -> ChatMessage:
+        return ChatMessage(
+            id=r["id"], thread_id=r["thread_id"], parent_id=r["parent_id"],
+            role=ChatRole(r["role"]), parts=json.loads(r["parts"]), status=r["status"],
+            run_id=r["run_id"], provider_id=r["provider_id"], model_id=r["model_id"],
+            created_at=r["created_at"],
         )
 
 

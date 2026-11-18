@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .agent.orchestrator import RunOrchestrator
 from .api.events import EventBus
-from .api.routes import findings, missions, runs, settings_llm, sources
+from .api.routes import conversations, findings, missions, reports, runs, settings_llm, sources
 from .connectors.base import ConnectorFactory
 from .core.settings import get_settings
 from .evidence.secrets_store import SecretsStore
@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     app.state.input_models = input_models
     app.state.llm_runtime = {}  # BYOK en mémoire uniquement (docs/10)
     app.state.run_controls = run_controls  # pause/stop runtime (ADR-15)
+    app.state.chat_controls = {}  # annulation tour chat (ADR-16)
     import asyncio
 
     app.state.run_semaphore = asyncio.Semaphore(2)  # worker local borné (docs/03)
@@ -84,6 +85,8 @@ app.include_router(missions.router)
 app.include_router(runs.router)
 app.include_router(findings.router)
 app.include_router(settings_llm.router)
+app.include_router(conversations.router)
+app.include_router(reports.router)
 
 
 @app.get("/api/health")

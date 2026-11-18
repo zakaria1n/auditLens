@@ -289,3 +289,61 @@ class RunEvent(BaseModel):
 
 
 FindingCandidate.model_rebuild()
+
+
+class ConversationStatus(str, Enum):
+    """ADR-16 — cycle de vie d'une conversation. `deleted` = soft-delete : les messages
+    et les liens vers preuves/runs restent en base (rétention d'audit)."""
+
+    active = "active"
+    archived = "archived"
+    deleted = "deleted"
+
+
+class ChatRole(str, Enum):
+    user = "user"
+    assistant = "assistant"
+    system = "system"
+
+
+class ChatMessage(BaseModel):
+    """Couche 1 (ADR-16) — message persistant d'une conversation, en ARBRE.
+
+    `parts` : liste ordonnée de parts sérialisables —
+    {"type": "text", "text": str} | {"type": "tool_call", "id", "tool", "args", "status",
+    "result", "evidence_ids", "error"} | {"type": "run_ref", "mission_id", "run_id"}.
+    Édition/régénération : nouveaux messages frères, l'historique n'est jamais réécrit.
+    """
+
+    id: str
+    thread_id: str
+    parent_id: str | None = None
+    role: ChatRole
+    parts: list[dict[str, Any]] = Field(default_factory=list)
+    status: Literal["complete", "running", "incomplete", "error"] = "complete"
+    run_id: str | None = None  # run d'investigation lancé depuis ce message
+    provider_id: str | None = None
+    model_id: str | None = None
+    created_at: str = Field(default_factory=utcnow)
+
+
+class ConversationThread(BaseModel):
+    """Fil de conversation. `head_message_id` = bout de la branche active.
+
+    Couche 2 (ADR-16) : `context_summary` + `summary_upto_message_id` — résumé de
+    compaction du contexte modèle. Ne modifie JAMAIS les messages originaux (couche 1)
+    ni les preuves (couche 3).
+    """
+
+    id: str
+    workspace_id: str = "ws_default"
+    title: str
+    head_message_id: str | None = None
+    mission_ids: list[str] = Field(default_factory=list)  # missions créées dans ce thread
+    run_ids: list[str] = Field(default_factory=list)
+    context_summary: str | None = None
+    summary_upto_message_id: str | None = None
+    compacted_message_count: int = 0
+    status: ConversationStatus = ConversationStatus.active
+    created_at: str = Field(default_factory=utcnow)
+    updated_at: str = Field(default_factory=utcnow)

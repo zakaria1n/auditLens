@@ -1,5 +1,9 @@
 from .schemas import (
     Assessment,
+    ChatMessage,
+    ChatRole,
+    ConversationStatus,
+    ConversationThread,
     AssessmentStatus,
     AuditMission,
     AuditPlan,
@@ -26,6 +30,10 @@ from .schemas import (
 
 __all__ = [
     "Assessment",
+    "ChatMessage",
+    "ChatRole",
+    "ConversationStatus",
+    "ConversationThread",
     "AssessmentStatus",
     "AuditMission",
     "AuditPlan",

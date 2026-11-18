@@ -13,7 +13,7 @@ import json
 import re
 from typing import Any
 
-from .base import LLMProvider, LLMResponse
+from .base import LLMProvider, LLMResponse, ProviderToolCall
 
 
 def _extract_task(messages: list[dict]) -> tuple[str, dict[str, Any]]:
@@ -52,6 +52,8 @@ class MockLLMProvider(LLMProvider):
         self.scenario = scenario
 
     async def chat(self, system: str, messages: list[dict], tools=None) -> LLMResponse:
+        if self.scenario == "chat":
+            return self._chat_decide(system, messages, tools)
         task, payload = _extract_task(messages)
         total_chars = len(system) + sum(len(str(m.get("content", ""))) for m in messages)
 
@@ -64,6 +66,99 @@ class MockLLMProvider(LLMProvider):
         else:
             content = json.dumps({"error": "tâche inconnue", "task": task})
         return LLMResponse(content=content, tool_calls=[], input_chars=total_chars)
+
+    # ---------- conversation chat (scénario `chat`, ADR-16) ----------
+
+    def _chat_decide(self, system: str, messages: list[dict], tools=None) -> LLMResponse:
+        """Agent chat scripté, GÉNÉRIQUE : l'intention de la demande COURANTE décide ;
+        le dernier résultat de tool ne sert qu'à formuler la réponse finale correspondante.
+        Demande d'audit → list_sources puis create_audit (appel DÉPENDANT : ids issus du
+        résultat réel de list_sources)."""
+        total_chars = len(system) + sum(len(str(m.get("content", ""))) for m in messages)
+        # le dernier tool ne compte que s'il appartient au tour COURANT (après la dernière
+        # demande user) — sinon un 2e audit réutiliserait le résultat du tour précédent
+        last_user_idx = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+        tool_msgs = [m for m in messages[last_user_idx + 1:] if m.get("role") == "tool"]
+        last_tool = tool_msgs[-1] if tool_msgs else None
+        user_texts = [str(m.get("content", "")) for m in messages if m.get("role") == "user"
+                      and not str(m.get("content", "")).startswith("TASK:")]
+        user_text = user_texts[-1] if user_texts else ""
+        low = user_text.lower()
+        n = len(tool_msgs) + 1
+
+        def call(name: str, args: dict) -> LLMResponse:
+            return LLMResponse(
+                content=None,
+                tool_calls=[ProviderToolCall(id=f"tc_chat_{n}", name=name, arguments=args)],
+                input_chars=total_chars,
+            )
+
+        def tool_result() -> dict:
+            if last_tool is None:
+                return {}
+            try:
+                parsed = json.loads(str(last_tool.get("content", "")))
+                return parsed if isinstance(parsed, dict) else {"raw": str(last_tool.get("content", ""))}
+            except json.JSONDecodeError:
+                return {"raw": str(last_tool.get("content", ""))}
+
+        wants_audit = "audit" in low
+        wants_status = "statut" in low or "run" in low
+        wants_findings = "constat" in low or "finding" in low
+        wants_sources = "source" in low
+
+        if tools and wants_audit:
+            if last_tool is not None and last_tool.get("name") == "list_sources":
+                result = tool_result()
+                sources = result.get("sources", [])
+                if sources:
+                    return call("create_audit", {
+                        "source_ids": [s["id"] for s in sources if s.get("id")][:1],
+                        "objective": user_text[:500],
+                    })
+                return LLMResponse(content="Aucune source connectée : configurez une source avant l'audit.",
+                                   input_chars=total_chars)
+            if last_tool is not None and last_tool.get("name") == "create_audit":
+                result = tool_result()
+                return LLMResponse(
+                    content=(f"Audit lancé : mission {result.get('mission_id', '?')}, "
+                             f"run {result.get('run_id', '?')}. L'exécution passe par le moteur "
+                             "d'investigation existant (Policy Gate actif ; tests actifs non approuvés)."),
+                    input_chars=total_chars,
+                )
+            return call("list_sources", {})
+
+        if tools and wants_status:
+            if last_tool is not None and last_tool.get("name") == "get_run_status":
+                result = tool_result()
+                stop = f", arrêt : {result.get('stop_reason')}" if result.get("stop_reason") else ""
+                return LLMResponse(
+                    content=(f"Run {result.get('run_id', '?')} : statut {result.get('status', '?')}{stop}, "
+                             f"tools exécutées : {result.get('tool_calls_used', 0)}."),
+                    input_chars=total_chars,
+                )
+            return call("get_run_status", {})
+
+        if tools and wants_findings:
+            if last_tool is not None and last_tool.get("name") == "get_findings":
+                result = tool_result()
+                findings = result.get("findings", [])
+                titles = "; ".join(str(f.get("title", "?")) for f in findings[:3]) or "aucun constat"
+                return LLMResponse(
+                    content=(f"{len(findings)} constat(s) pour la mission {result.get('mission_id', '?')} : "
+                             f"{titles}. Revue humaine requise avant toute conclusion publiée."),
+                    input_chars=total_chars,
+                )
+            return call("get_findings", {})
+
+        if tools and wants_sources:
+            if last_tool is not None and last_tool.get("name") == "list_sources":
+                result = tool_result()
+                names = ", ".join(str(s.get("name", s.get("id", "?"))) for s in result.get("sources", [])) or "aucune"
+                return LLMResponse(content=f"Sources connectées : {names}.", input_chars=total_chars)
+            return call("list_sources", {})
+
+        return LLMResponse(content=f"Réponse de l'assistant : {user_text[:300]}", input_chars=total_chars)
 
     # ---------- boucle d'investigation (décision par tour) ----------
 

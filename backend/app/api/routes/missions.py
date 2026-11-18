@@ -21,6 +21,7 @@ from ...models import (
     utcnow,
 )
 from .sources import _create_initial_file_evidence
+from ...services.run_launcher import launch_run
 
 router = APIRouter(prefix="/api/missions", tags=["missions"])
 
@@ -224,41 +225,7 @@ async def start_run(mission_id: str, request: Request, body: RunBody | None = No
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
-    run = AuditRun(
-        id=new_id("run"), mission_id=mission.id, status=RunStatus.not_started,
-        provider_id=provider.provider_id, model_id=provider.model_id,
-    )
-    await d.repo.create_run(run)
-    mission.status = MissionStatus.running
-    await d.repo.update_mission(mission)
-
-    async def _worker():
-        async with d.run_semaphore:  # worker local borné (docs/03)
-            try:
-                await asyncio.wait_for(
-                    d.orchestrator.execute_run(run, mission, provider),
-                    timeout=mission.limits.max_seconds + 10,
-                )
-            except asyncio.TimeoutError:
-                run.status = RunStatus.partial
-                run.stop_reason = "budget_exhausted:max_seconds"
-                run.finished_at = utcnow()
-                await d.repo.update_run(run)
-                await d.bus.publish(run.id, "run_completed", {"status": run.status.value, "stop_reason": run.stop_reason})
-            finally:
-                mission_status = await d.repo.get_mission(mission_id)
-                if mission_status and mission_status.status == MissionStatus.running:
-                    # Un run en pause n'est pas terminé : la mission reste `approved`
-                    # (reprise possible via /resume) — ADR-15.
-                    latest = run.status if run.status else RunStatus.not_started
-                    mission_status.status = (
-                        MissionStatus.running if latest == RunStatus.paused else MissionStatus.completed
-                    )
-                    await d.repo.update_mission(mission_status)
-
-    task = asyncio.create_task(_worker())
-    d.tasks.add(task)
-    task.add_done_callback(d.tasks.discard)
+    run = await launch_run(d, mission, provider)
     return {"run_id": run.id, "status": run.status.value}
 
 
