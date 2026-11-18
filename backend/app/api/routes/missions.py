@@ -265,3 +265,22 @@ async def list_controls(request: Request):
 @router.get("/catalog/rulesets")
 async def list_rulesets(request: Request):
     return {"rule_sets": [rs.model_dump() for rs in RULE_SETS.values()]}
+
+
+@router.get("/{mission_id}/coverage")
+async def mission_coverage(mission_id: str, request: Request):
+    """Couverture RÉELLE des contrôles (Phase 5/10) : calculée depuis assessments,
+    findings et tool_calls backend. « not_tested » n'est jamais un pass ; aucun
+    score global trompeur n'est produit."""
+    from ..audit.coverage import compute_coverage
+
+    d = deps(request)
+    mission = await d.repo.get_mission(mission_id)
+    if mission is None:
+        raise HTTPException(404, "mission inconnue")
+    assessments = await d.repo.list_mission_assessments(mission_id)
+    findings = await d.repo.list_findings(mission_id=mission_id)
+    tool_calls: list = []
+    for run in await d.repo.list_runs(mission_id):
+        tool_calls.extend(await d.repo.list_tool_calls(run.id))
+    return compute_coverage(mission, assessments, findings, tool_calls)

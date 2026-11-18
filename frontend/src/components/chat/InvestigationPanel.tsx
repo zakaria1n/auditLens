@@ -6,6 +6,7 @@ import type { AuditMission, AuditRun, Finding, RunEvent } from '../../lib/types'
 import { subscribeRunEvents } from '../../lib/sse'
 import { EvidenceDetailPanel } from '../EvidenceDetailPanel'
 import { FindingCard } from '../FindingCard'
+import { CoverageMap, useCoverage } from '../../features/audit-coverage/CoverageMap'
 import { HypothesisComparison, useHypotheses } from '../../features/hypotheses/HypothesisComparison'
 
 interface PanelProps {
@@ -15,7 +16,7 @@ interface PanelProps {
   onCloseMobile?: () => void
 }
 
-type Tab = 'overview' | 'tools' | 'hypotheses' | 'evidence' | 'findings'
+type Tab = 'overview' | 'tools' | 'hypotheses' | 'evidence' | 'findings' | 'coverage'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Aperçu' },
@@ -23,6 +24,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'hypotheses', label: 'Hypothèses' },
   { key: 'evidence', label: 'Preuves' },
   { key: 'findings', label: 'Constats' },
+  { key: 'coverage', label: 'Couverture' },
 ]
 
 
@@ -75,6 +77,19 @@ function BudgetBar({ run, events }: { run: AuditRun | null; events: RunEvent[] }
   )
 }
 
+
+function CoverageSection({
+  missionId,
+  onOpenEvidence,
+}: {
+  missionId: string
+  onOpenEvidence: (evidenceId: string, missionId: string) => void
+}) {
+  const { coverage, error } = useCoverage(missionId || null)
+  if (error) return <p className="text-xs text-red-600">Couverture indisponible : {error}</p>
+  if (!coverage) return <p className="text-xs text-slate-400">Chargement de la couverture…</p>
+  return <CoverageMap coverage={coverage} onOpenEvidence={onOpenEvidence} missionId={missionId} />
+}
 
 /** Un run : en-tête permanent (statut, budget, contrôles) + contenu de l'onglet actif. */
 function RunSection({
@@ -311,6 +326,8 @@ function RunSection({
           </div>
         )}
 
+        {tab === 'coverage' && <CoverageSection missionId={missionId} onOpenEvidence={onOpenEvidence} />}
+
         {tab === 'findings' && (
           <div className="space-y-2.5">
             {findings.length === 0 ? (
@@ -445,7 +462,7 @@ export function InvestigationPanel({
           )}
 
           {runIds.length > 0 && (
-            <div className="mx-3 mb-3 mt-1 grid shrink-0 grid-cols-5 gap-0.5 rounded-xl bg-slate-200/70 p-0.5">
+            <div className="mx-3 mb-3 mt-1 grid shrink-0 grid-cols-6 gap-0.5 rounded-xl bg-slate-200/70 p-0.5">
               {TABS.map((t) => (
                 <button
                   key={t.key}

@@ -264,6 +264,20 @@ class Repository:
              json.dumps(a.limitations)),
         )
 
+    async def list_mission_assessments(self, mission_id: str) -> list[Assessment]:
+        rows = await self.db.query_all(
+            "SELECT * FROM assessments WHERE mission_id=? ORDER BY control_id", (mission_id,)
+        )
+        return [
+            Assessment(
+                id=r["id"], run_id=r["run_id"], mission_id=r["mission_id"], control_id=r["control_id"],
+                criterion_version=r["criterion_version"], result=r["result"],
+                evidence_refs=json.loads(r["evidence_refs"]), observations=json.loads(r["observations"]),
+                method=r["method"], limitations=json.loads(r["limitations"]),
+            )
+            for r in rows
+        ]
+
     async def list_assessments(self, run_id: str) -> list[Assessment]:
         rows = await self.db.query_all(
             "SELECT * FROM assessments WHERE run_id=? ORDER BY control_id", (run_id,)
