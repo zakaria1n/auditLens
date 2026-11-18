@@ -1,0 +1,34 @@
+[project]
+name = "auditlens-backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "anthropic>=2.8.0",
+    "fastapi>=0.162.5",
+    "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
+    "openai>=3.49.0",
+    "openpyxl>=3.1.5",
+    "pandas>=3.1.1",
+    "pydantic>=2.14.3",
+    "python-multipart>=0.0.33",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "playwright>=1.65.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
