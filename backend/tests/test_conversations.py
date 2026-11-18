@@ -297,3 +297,74 @@ def _D(client: httpx.AsyncClient):
     d.tasks = app.state.background_tasks
     d.settings = app.state.settings
     return d
+
+async def test_thread_rename_and_pin_persist(client):
+    thread = await create_thread(client, "Original")
+    thread_id = thread["id"]
+    response = await client.patch(f"/api/conversations/{thread_id}", json={"title": "  Audit ERP  ", "pinned": True})
+    assert response.status_code == 200
+    assert response.json()["thread"]["title"] == "Audit ERP"
+    assert response.json()["thread"]["pinned"] is True
+    listed = (await client.get("/api/conversations")).json()["threads"]
+    assert next(t for t in listed if t["id"] == thread_id)["pinned"] is True
+    assert (await client.patch(f"/api/conversations/{thread_id}", json={"title": "  "})).status_code == 422
+    assert (await client.patch(f"/api/conversations/{thread_id}", json={"pinned": False})).json()["thread"]["pinned"] is False
+    await client.delete(f"/api/conversations/{thread_id}")
+    assert (await client.patch(f"/api/conversations/{thread_id}", json={"title": "No"})).status_code == 410
+
+async def test_default_conversation_gets_first_message_title(client):
+    thread = (await client.post('/api/conversations', json={})).json()['thread']
+    await stream_turn(client, thread['id'], {'content': 'Verifier les ventes\nPeriode courante'})
+    listing = (await client.get('/api/conversations')).json()['threads']
+    assert next(item for item in listing if item['id'] == thread['id'])['title'] == 'Verifier les ventes'
+    await stream_turn(client, thread['id'], {'content': 'Une autre question'})
+    assert (await client.get(f"/api/conversations/{thread['id']}")).json()['thread']['title'] == 'Verifier les ventes'
+
+async def test_chat_emits_provider_deltas_and_persists_final(client, monkeypatch):
+    from app.agent.providers.base import LLMProvider, LLMResponse
+    class StreamingProvider(LLMProvider):
+        provider_id = 'fake-stream'
+        model_id = 'fake-model'
+        async def chat(self, system, messages, tools=None):
+            raise AssertionError('streaming attendu')
+        async def stream_chat(self, system, messages, tools=None):
+            yield 'Bonjour'
+            yield ' en direct'
+            yield LLMResponse(content='Bonjour en direct')
+    monkeypatch.setattr('app.agent.chat.build_provider', lambda *args, **kwargs: StreamingProvider())
+    thread = await create_thread(client)
+    events = await stream_turn(client, thread['id'], {'content': 'bonjour'})
+    assert [e['text'] for e in events if e['type'] == 'text_delta'] == ['Bonjour', ' en direct']
+    assert next(i for i, e in enumerate(events) if e['type'] == 'assistant_start') < next(i for i, e in enumerate(events) if e['type'] == 'text_delta')
+    detail = (await client.get(f"/api/conversations/{thread['id']}")).json()
+    assert detail['messages'][-1]['parts'] == [{'type': 'text', 'text': 'Bonjour en direct'}]
+
+async def test_openai_stream_reassembles_tool_arguments():
+    from types import SimpleNamespace as S
+    from app.agent.providers.openai_compatible import OpenAICompatibleProvider
+    from app.agent.providers.base import LLMResponse
+    provider = OpenAICompatibleProvider('compatible', 'test', 'test', 'http://localhost:8009')
+    class FakeStream:
+        closed = False
+        def __aiter__(self):
+            async def generate():
+                for chunk in [
+                    S(choices=[S(delta=S(content='Avant ', tool_calls=None))]),
+                    S(choices=[S(delta=S(content=None, tool_calls=[S(index=0, id='call_1', function=S(name='list_', arguments='{"x":'))]))]),
+                    S(choices=[S(delta=S(content=None, tool_calls=[S(index=0, id=None, function=S(name='sources', arguments='1}'))]))]),
+                ]:
+                    yield chunk
+            return generate()
+        async def close(self): self.closed = True
+    fake = FakeStream()
+    async def create(**kwargs):
+        assert kwargs['stream'] is True
+        return fake
+    provider._client.chat.completions.create = create
+    events = [event async for event in provider.stream_chat('system', [], [])]
+    assert events[0] == 'Avant '
+    assert isinstance(events[-1], LLMResponse)
+    assert events[-1].tool_calls[0].name == 'list_sources'
+    assert events[-1].tool_calls[0].arguments == {'x': 1}
+    assert fake.closed
+    await provider.close()

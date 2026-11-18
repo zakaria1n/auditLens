@@ -200,3 +200,21 @@ def test_live_contract_check_detects_A1_A2_A3():
 
     found = asyncio.run(run())
     assert found, "A2 doit produire au moins une violation de schéma"
+
+async def test_openapi_discovery_blocks_private_destination_before_http(monkeypatch):
+    from app.connectors.api.connector import RestApiConnector
+    from app.core.errors import PolicyViolation
+    called = False
+    def reject_url(*args, **kwargs):
+        raise PolicyViolation('private destination denied')
+    class ForbiddenClient:
+        def __init__(self, *args, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError('HTTP client must not be created')
+    monkeypatch.setattr('app.connectors.api.connector.validate_url', reject_url)
+    monkeypatch.setattr('app.connectors.api.connector.httpx.AsyncClient', ForbiddenClient)
+    connector = RestApiConnector({'base_url':'https://example.com', 'openapi_url':'http://127.0.0.1/openapi.json'}, {})
+    result = await connector.discover()
+    assert 'private destination denied' in result['openapi']['error']
+    assert not called
