@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS investigation_checkpoints (
 
 CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON investigation_checkpoints(run_id, created_at);
 
+CREATE TABLE IF NOT EXISTS finding_action_plans (
+    finding_id TEXT PRIMARY KEY,
+    plan TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS conversation_threads (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,

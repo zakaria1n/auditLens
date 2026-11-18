@@ -86,3 +86,45 @@ async def list_findings(request: Request, run_id: str | None = None, mission_id:
 async def list_mission_evidence(mission_id: str, request: Request):
     d = deps(request)
     return {"evidence": [e.model_dump() for e in await d.repo.list_evidence(mission_id=mission_id)]}
+
+
+class ActionBody(BaseModel):
+    action_id: str
+    status: str
+
+
+@router.get("/api/findings/{finding_id}/action-plan")
+async def get_action_plan(finding_id: str, request: Request):
+    """Plan d'action d'un constat (Phase 10/10). Auto-créé depuis les
+    recommendations si absent — statuts initiaux 'proposed'."""
+    d = deps(request)
+    finding = await d.repo.get_finding(finding_id)
+    if finding is None:
+        raise HTTPException(404, "constat inconnu")
+    plan = await d.repo.get_action_plan(finding_id)
+    if plan is None:
+        from ...audit.remediation import build_action_plan
+
+        plan = build_action_plan(finding_id, finding.recommendations)
+        from ...models.schemas import utcnow
+
+        await d.repo.save_action_plan(finding_id, plan, utcnow())
+    return {"plan": plan}
+
+
+@router.post("/api/findings/{finding_id}/action-plan/transition")
+async def transition_action(finding_id: str, body: ActionBody, request: Request):
+    """Transition initiée par l'HUMAIN ('verified' interdit ici : seul un run de
+    vérification produit ce statut, avec preuves)."""
+    d = deps(request)
+    plan = await d.repo.get_action_plan(finding_id)
+    if plan is None:
+        raise HTTPException(404, "plan d'action inconnu")
+    from ...audit.remediation import apply_human_transition
+    from ...models.schemas import utcnow
+
+    plan, error = apply_human_transition(plan, body.action_id, body.status)
+    if error:
+        raise HTTPException(409, error)
+    await d.repo.save_action_plan(finding_id, plan, utcnow())
+    return {"plan": plan}

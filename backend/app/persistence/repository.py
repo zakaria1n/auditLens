@@ -397,6 +397,28 @@ class Repository:
             reason=r["reason"], state=json.loads(r["state"]), created_at=r["created_at"],
         )
 
+    # ---------------- Plans d'action remédiation (Phase 10/10) ----------------
+
+    async def get_action_plan(self, finding_id: str) -> dict | None:
+        rows = await self.db.query_all(
+            "SELECT plan FROM finding_action_plans WHERE finding_id=?", (finding_id,)
+        )
+        if not rows:
+            return None
+        import json as _json
+
+        return _json.loads(rows[0]["plan"])
+
+    async def save_action_plan(self, finding_id: str, plan: dict, updated_at: str) -> None:
+        import json as _json
+
+        await self.db.conn.execute(
+            "INSERT INTO finding_action_plans (finding_id, plan, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(finding_id) DO UPDATE SET plan=excluded.plan, updated_at=excluded.updated_at",
+            (finding_id, _json.dumps(plan, ensure_ascii=False), updated_at),
+        )
+        await self.db.conn.commit()
+
     # ---------------- Conversations (ADR-16, couche 1) ----------------
 
     async def create_thread(self, t: ConversationThread) -> None:
