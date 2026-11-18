@@ -188,6 +188,7 @@ function RunSection({
   const evidences = events.filter((e) => e.type === 'evidence')
   const needsInput = events.filter((e) => e.type === 'info_request' || e.type === 'needs_input')
   const decisions = events.filter((e) => e.type === 'investigation_decision')
+  const privacy = events.filter((e) => e.type === 'privacy_preview')
   const status = run?.status ?? '…'
   const paused = status === 'paused'
   const missionId = run?.mission_id ?? ''
@@ -206,6 +207,41 @@ function RunSection({
 
         <div className="mt-2.5 space-y-2">
           <BudgetBar run={run} events={events} />
+        {privacy.length > 0 && (
+          <div className="rounded-xl bg-indigo-50/70 px-3 py-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-800">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
+              </svg>
+              Exposition IA (contexte envoyé au provider)
+            </p>
+            {(() => {
+              const last = privacy[privacy.length - 1]
+              const data = last.data as Record<string, unknown>
+              const cats = (data.categories as { category: string; count: number }[] | undefined) ?? []
+              return (
+                <div className="mt-1">
+                  <p className="text-[11px] text-indigo-700">
+                    {String(data.provider)}/{String(data.model)} · phase {String(data.phase)} ·{' '}
+                    {String(data.total_redactions)} valeur(s) masquée(s) du contexte LLM
+                  </p>
+                  {cats.length > 0 && (
+                    <p className="mt-0.5 flex flex-wrap gap-1">
+                      {cats.slice(0, 5).map((c) => (
+                        <span key={c.category} className="rounded bg-white px-1.5 py-0.5 text-[10px] text-indigo-600">
+                          {c.category} ×{c.count}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-[10px] leading-snug text-indigo-400">
+                    masquage automatique (aide, pas une garantie) ; preuves immuables intactes
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+        )}
           {needsInput.length > 0 && (
             <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
               {needsInput.map((e) => (

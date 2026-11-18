@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator
 from ..api.deps import AppDeps
 from ..audit.controls import control_to_dict, list_controls
 from ..audit.discovery import build_source_intelligence
+from ..privacy import sanitize_context
 from ..agent.providers import build_provider, resolve_llm_config
 from ..agent.providers.base import LLMResponse
 from ..core.errors import ProviderError
@@ -233,9 +234,19 @@ class ChatService:
                 if controls.get(thread.id) == "cancel":
                     cancelled = True
                     break
+                # Phase 7/10 : contexte assaini (PII masquée) — l'original n'est jamais modifié
+                sanitized_system, sys_counts = sanitize_context(system)
+                sanitized_canon, canon_counts = sanitize_context(canon)
+                all_counts = dict(sys_counts)
+                for k, v in canon_counts.items():
+                    all_counts[k] = all_counts.get(k, 0) + v
+                if all_counts:
+                    yield {"type": "privacy_preview", "categories": [
+                        {"category": k, "count": v} for k, v in sorted(all_counts.items(), key=lambda kv: -kv[1])
+                    ], "total_redactions": sum(all_counts.values())}
                 resp: LLMResponse | None = None
                 round_text: dict | None = None
-                async for item in provider.stream_chat(system, canon, tools=CHAT_TOOLS):
+                async for item in provider.stream_chat(sanitized_system, sanitized_canon, tools=CHAT_TOOLS):
                     if controls.get(thread.id) == "cancel":
                         cancelled = True
                         break
