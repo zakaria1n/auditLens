@@ -34,7 +34,7 @@ export function SettingsPage() {
 
   // provider opencode-cli : catalogue LIVE des modèles free (aucune clé requise)
   useEffect(() => {
-    if (provider !== 'opencode-cli') return
+    if (provider !== 'opencode-cli' && provider !== 'opencode') return
     setOcModels(null)
     setOcError(null)
     let cancelled = false
@@ -44,9 +44,7 @@ export function SettingsPage() {
         if (res.ok && res.models.length > 0) {
           setOcModels(res.models)
           // si le modèle courant n'existe pas dans le catalogue : bascule sur le modèle validé
-          setModel((cur) =>
-            res.models.some((m) => m.id === cur) ? cur : 'deepseek-v4.1-flash-free',
-          )
+          setModel((cur) => res.models.some((m) => m.id === cur) ? cur : '')
         } else {
           setOcError(res.error ?? 'catalogue vide')
         }
@@ -59,9 +57,10 @@ export function SettingsPage() {
     }
   }, [provider])
 
-  const keyConfigured = serverConfig?.key_configured ?? false
+  const keyConfigured = provider === serverConfig?.provider && (serverConfig?.key_configured ?? false)
   const providers = serverConfig?.providers_available ?? ['mock', 'opencode', 'opencode-cli', 'openai', 'gemini', 'anthropic', 'deepseek', 'compatible']
   const isOpencodeCli = provider === 'opencode-cli'
+  const isOpencode = provider === 'opencode' || isOpencodeCli
 
   async function handleSave() {
     setBusy('save')
@@ -71,7 +70,7 @@ export function SettingsPage() {
       const res = await setLLMConfig({
         provider,
         model: model.trim(),
-        base_url: baseUrl.trim() || null,
+        base_url: provider === 'opencode' ? null : baseUrl.trim() || null,
         api_key: apiKey || undefined, // non envoyé si vide : la clé mémorisée reste en place
       })
       setSaveMsg(`Configuration enregistrée en mémoire backend : ${res.provider} / ${res.model || '—'}`)
@@ -88,8 +87,7 @@ export function SettingsPage() {
     setBusy('test')
     setTestMsg(null)
     try {
-      // Si aucune nouvelle clé n'est saisie, on teste la configuration en mémoire du backend.
-      const body = apiKey ? { provider, model: model.trim(), base_url: baseUrl.trim() || null, api_key: apiKey } : undefined
+      const body = { provider, model: model.trim(), base_url: provider === 'opencode' ? null : baseUrl.trim() || null, api_key: apiKey || undefined }
       const res = await testLLMConfig(body)
       setTestMsg({
         ok: res.ok,
@@ -98,7 +96,6 @@ export function SettingsPage() {
     } catch (err) {
       setTestMsg({ ok: false, text: errorMessage(err) })
     } finally {
-      setApiKey('')
       setBusy(null)
     }
   }
@@ -151,16 +148,15 @@ export function SettingsPage() {
               label="Modèle"
               htmlFor="llm-model"
               hint={
-                isOpencodeCli
-                  ? 'Modèles FREE OpenCode (catalogue live, tool-calls supportés)'
+                isOpencode
+                  ? 'Catalogue OpenCode : modèles gratuits et Big Pickle ; disponibilité selon le fournisseur.'
                   : 'ex. gpt-4o-mini, gemini-2.0-flash, claude-sonnet-4-5, deepseek-chat…'
               }
             >
-              {isOpencodeCli ? (
+              {isOpencode ? (
                 ocError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                    Catalogue indisponible : {ocError}. Le CLI OpenCode doit être installé et
-                    l'accès réseau ouvert.
+                    Catalogue indisponible : {ocError}. Vérifiez la connexion réseau puis réessayez.
                   </div>
                 ) : ocModels == null ? (
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-400">
@@ -168,6 +164,7 @@ export function SettingsPage() {
                   </div>
                 ) : (
                   <Select id="llm-model" value={model} onChange={(e) => setModel(e.target.value)}>
+                    <option value="">— Choisir un modèle —</option>
                     {ocModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name} — {m.id}
@@ -179,11 +176,12 @@ export function SettingsPage() {
                 <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} />
               )}
             </Field>
+            {provider === 'opencode' && <p className="sm:col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">L’API OpenCode Console hors OpenCode ne donne pas accès aux modèles chat gratuits. Utilisez un modèle autorisé avec une clé valide ; les modèles gratuits restent disponibles dans OpenCode selon le catalogue et les conditions du fournisseur.</p>}
             {!isOpencodeCli && (
               <>
-                <Field label="base_url (compatible uniquement)" htmlFor="llm-base">
+                {provider === 'compatible' && <Field label="base_url" htmlFor="llm-base">
                   <Input id="llm-base" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
-                </Field>
+                </Field>}
                 <Field
                   label="Clé API"
                   htmlFor="llm-key"
@@ -207,11 +205,11 @@ export function SettingsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleSave} disabled={busy !== null}>
+            <Button onClick={handleSave} disabled={busy !== null || (isOpencode && (!model || ocModels == null))}>
               {busy === 'save' ? 'Enregistrement…' : 'Enregistrer (mémoire backend)'}
             </Button>
-            <Button variant="outline" onClick={handleTest} disabled={busy !== null}>
-              {busy === 'test' ? 'Test en cours…' : apiKey ? 'Tester avec cette clé' : 'Tester la configuration enregistrée'}
+            <Button variant="outline" onClick={handleTest} disabled={busy !== null || (isOpencode && (!model || ocModels == null))}>
+              {busy === 'test' ? 'Test en cours…' : apiKey ? 'Tester avec cette clé' : 'Tester le modèle sélectionné'}
             </Button>
           </div>
 

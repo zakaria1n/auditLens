@@ -20,6 +20,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [investigationOpen, setInvestigationOpen] = useState(false)
+  const [navigationError, setNavigationError] = useState('')
 
   const isChatRoute = CHAT_ROUTES.has(location.pathname)
   const subPageTitle = isChatRoute
@@ -40,7 +41,8 @@ export function AppShell() {
           void ws.selectThread(id)
           if (!isChatRoute) navigate('/chat')
         }}
-        onNew={() => void ws.newThread()}
+        onNew={() => { setNavigationError(''); void ws.newThread().then(() => navigate('/chat')).catch(() => setNavigationError('Création de la conversation impossible. Vérifiez la connexion au serveur.')) }}
+        onUpdate={ws.updateMetadata}
         onArchive={(id) => void ws.archive(id)}
         onRestore={(id) => void ws.restore(id)}
         onDelete={(id) => void ws.remove(id)}
@@ -49,6 +51,7 @@ export function AppShell() {
       />
 
       <main className="relative min-w-0 flex-1">
+        {navigationError && <div role="alert" className="absolute left-4 right-4 top-4 z-50 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{navigationError}<button type="button" className="ml-3 font-semibold" onClick={() => setNavigationError('')}>Fermer</button></div>}
         {/* conversation : toujours montée, invisibilisée sous une sous-page (état + scroll préservés) */}
         <div
           className={`absolute inset-0 flex overflow-hidden ${
@@ -60,12 +63,12 @@ export function AppShell() {
             onOpenSidebar={() => setSidebarOpen(true)}
             onToggleInvestigation={() => setInvestigationOpen((v) => !v)}
           />
-          <InvestigationPanel
+          {!!ws.thread?.run_ids.length && <InvestigationPanel
             missionIds={ws.thread?.mission_ids ?? []}
             runIds={ws.thread?.run_ids ?? []}
             mobileOpen={investigationOpen}
             onCloseMobile={() => setInvestigationOpen(false)}
-          />
+          />}
         </div>
 
         {/* sous-pages du menu + deep links historiques */}

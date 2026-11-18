@@ -41,6 +41,7 @@ export interface ChatMsg {
 export interface ThreadMeta {
   id: string
   title: string
+  pinned: boolean
   status: 'active' | 'archived' | 'deleted'
   head_message_id: string | null
   mission_ids: string[]
@@ -63,6 +64,8 @@ export interface BranchNode {
 export type ChatStreamEvent =
   | { type: 'message'; message: ChatMsg }
   | { type: 'head'; head_message_id: string }
+  | { type: 'assistant_start'; message_id: string }
+  | { type: 'text_delta'; text: string }
   | { type: 'tool_call'; id: string; tool: string; args?: Record<string, unknown> }
   | { type: 'tool_result'; id: string; tool: string; status: string; result?: Record<string, unknown> }
   | { type: 'thread'; thread: ThreadMeta }
@@ -79,6 +82,10 @@ export function createThread(title?: string) {
     method: 'POST',
     body: JSON.stringify({ title: title ?? null }),
   })
+}
+
+export function updateThread(id: string, changes: { title?: string; pinned?: boolean }) {
+  return request<{ thread: ThreadMeta }>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(changes) })
 }
 
 export function getThread(id: string) {

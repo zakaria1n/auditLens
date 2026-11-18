@@ -60,3 +60,28 @@ body {
 .al-event-in {
   animation: al-event-in 180ms ease-out both;
 }
+:root { --al-ink: #182033; --al-muted: #6c7689; --al-brand: #5046c9; --al-surface: #fafbfc; --al-border: #e5e8ef; --al-shadow: 0 12px 36px rgba(35, 40, 75, .08); }
+:focus-visible { outline: 2px solid #655be1; outline-offset: 3px; }
+.composer-shell { border: 1px solid #dfe3ec; border-radius: 20px; background: white; box-shadow: var(--al-shadow); padding: 14px 14px 8px; transition: border-color 160ms, box-shadow 160ms; }
+.composer-shell:focus-within { border-color: #a7a0e8; box-shadow: 0 12px 36px rgba(80,70,201,.12); }
+.composer-shell textarea { width: 100%; min-height: 44px; max-height: 176px; resize: none; background: transparent; padding: 4px 8px; color: var(--al-ink); outline: none; line-height: 1.55; }
+.send-button { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--al-brand); color: white; font-size: 20px; transition: background 150ms; }
+.send-button:hover { background: #3f36ac; } .send-button:disabled { opacity: .35; }
+.voice-button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #697386; } .voice-button:hover { background: #f0efff; color: var(--al-brand); } .voice-button.is-listening { color: #be123c; background: #fff1f2; }
+.welcome-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; background: #eeedff; color: var(--al-brand); font-size: 26px; }
+.suggestion { min-height: 68px; border: 1px solid var(--al-border); border-radius: 14px; background: white; padding: 13px 15px; text-align: left; font-size: 13px; font-weight: 600; color: #394258; transition: border-color 150ms, transform 150ms, box-shadow 150ms; }
+.suggestion:hover { border-color: #b8b2eb; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(40,40,80,.06); }
+.thread-actions { position:absolute; right:6px; top:4px; display:flex; gap:2px; opacity:0; transition:opacity 140ms ease; }
+.group:hover .thread-actions, .group:focus-within .thread-actions, .thread-actions.is-open { opacity:1; }
+.thread-action { display:grid; place-items:center; width:29px; height:29px; border-radius:8px; color:#718096; }
+.thread-action:hover { background:white; color:#5046c9; } .thread-action[aria-pressed="true"] { color:#5046c9; }
+.thread-menu { position:absolute; z-index:20; right:4px; top:calc(100% - 2px); width:175px; padding:5px; border:1px solid #e4e7ee; border-radius:12px; background:white; box-shadow:0 12px 30px rgba(30,35,65,.15); }
+.thread-menu button { display:flex; align-items:center; gap:10px; width:100%; border-radius:8px; padding:9px; text-align:left; color:#475569; font-size:13px; }
+.thread-menu button:hover, .thread-menu button:focus-visible { background:#f4f4fa; } .thread-menu button.destructive { color:#be123c; }
+@media (hover:none) { .thread-actions { opacity:1; } }
+
+.thread-menu.opens-up { top:auto; bottom:calc(100% - 2px); }
+
+/* Le contenu reste défilable à la souris, au clavier et au toucher. */
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }

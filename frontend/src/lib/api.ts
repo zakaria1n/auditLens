@@ -263,6 +263,12 @@ export function getLLMConfig() {
   return request<LLMConfigResponse>('/api/settings/llm')
 }
 
+export function selectLLMModel(provider: string, model: string) {
+  return request<{ provider: string; model: string }>('/api/settings/llm/model', {
+    method: 'PATCH', body: JSON.stringify({ provider, model }),
+  })
+}
+
 export function setLLMConfig(body: LLMConfigBody) {
   return request<{ ok: boolean; provider: string; model: string }>('/api/settings/llm', {
     method: 'PUT',

@@ -15,7 +15,6 @@ interface MessagesProps {
 }
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {
-  if (message.parent_id == null && message.role === 'user') return []
   return branches.filter((n) => n.parent_id === message.parent_id && n.role === message.role)
 }
 
@@ -36,7 +35,6 @@ function MessageStatusBadge({ status }: { status: string }) {
 function BranchPicker({
   message,
   branches,
-  headId,
   onSwitchBranch,
 }: {
   message: ChatMsg
@@ -47,7 +45,6 @@ function BranchPicker({
   const siblings = siblingsOf(branches, message)
   if (siblings.length <= 1) return null
   const idx = siblings.findIndex((s) => s.id === message.id)
-  const onActiveBranch = headId != null && isAncestorActive(siblings, message, headId)
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-500">
       <button
@@ -71,15 +68,8 @@ function BranchPicker({
       >
         ›
       </button>
-      {!onActiveBranch && <span className="text-amber-600">· branche inactive</span>}
     </span>
   )
-}
-
-function isAncestorActive(siblings: BranchNode[], message: ChatMsg, headId: string): boolean {
-  // approximation honnête : la variante est « active » si un retour au head passe par elle ;
-  // l'information exacte vient du backend (head) — ici on marque seulement la dernière.
-  return message.id === headId || siblings.every((s) => s.created_at <= message.created_at)
 }
 
 function EditComposer({
@@ -149,6 +139,7 @@ function UserMessage({
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status} />
+        <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-indigo-600">Copier</button>
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
@@ -214,6 +205,7 @@ function AssistantMessage({
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status === 'error' ? '' : message.status} />
+        {text && <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-indigo-600">Copier</button>}
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
@@ -240,8 +232,16 @@ export function ChatMessages({
   onSwitchBranch,
 }: MessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const followRef = useRef(true)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const viewport = bottomRef.current?.closest('.overflow-y-auto')
+    if (!viewport) return
+    const onScroll = () => { followRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100 }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [])
+  useEffect(() => {
+    if (followRef.current) bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages])
 
   return (

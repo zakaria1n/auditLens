@@ -18,6 +18,7 @@ import {
   restoreThread,
   setHead,
   streamTurn,
+  updateThread,
 } from './chatApi'
 
 export interface Notice {
@@ -82,12 +83,12 @@ export function useChatWorkspace() {
     refreshThreads().catch(() => setNotice({ kind: 'error', text: 'Chargement des conversations impossible' }))
   }, [refreshThreads])
 
-  const newThread = useCallback(async () => {
-    const { thread: t } = await createThread()
-    await refreshThreads()
+  const newThread = useCallback(async (title?: string) => {
+    const { thread: t } = await createThread(title)
+    setThreads(previous => [t, ...previous.filter(item => item.id !== t.id)])
     await selectThread(t.id)
     return t
-  }, [refreshThreads, selectThread])
+  }, [selectThread])
 
   /** Cœur du tour : applique les événements SSE au rendu puis re-synchronise. */
   const runTurn = useCallback(
@@ -105,10 +106,11 @@ export function useChatWorkspace() {
       const ensurePending = () => {
         if (pendingId == null) {
           pendingId = `pending-${Date.now()}`
+          const createdId = pendingId
           setMessages((prev) => [
             ...prev,
             {
-              id: pendingId as string,
+              id: createdId,
               thread_id: threadId,
               parent_id: null,
               role: 'assistant',
@@ -122,9 +124,10 @@ export function useChatWorkspace() {
       }
 
       const updatePart = (toolId: string, patch: Partial<ChatMsg['parts'][number]> & { status?: string; result?: Record<string, unknown> }) => {
+        const currentPendingId = pendingId
         setMessages((prev) =>
           prev.map((m) => {
-            if (m.id !== pendingId) return m
+            if (m.id !== currentPendingId) return m
             return {
               ...m,
               parts: m.parts.map((p) =>
@@ -146,6 +149,18 @@ export function useChatWorkspace() {
             setMessages((prev) => [...prev.filter((m) => m.id !== finalId), ev.message])
             pendingId = null
           }
+        } else if (ev.type === 'assistant_start') {
+          ensurePending()
+        } else if (ev.type === 'text_delta') {
+          const pid = ensurePending()
+          setMessages(previous => previous.map(message => {
+            if (message.id !== pid) return message
+            const parts = [...message.parts]
+            const last = parts[parts.length - 1]
+            if (last?.type === 'text') parts[parts.length - 1] = { ...last, text: last.text + ev.text }
+            else parts.push({ type: 'text', text: ev.text })
+            return { ...message, parts }
+          }))
         } else if (ev.type === 'tool_call') {
           const pid = ensurePending()
           setMessages((prev) =>
@@ -169,6 +184,7 @@ export function useChatWorkspace() {
         } else if (ev.type === 'thread') {
           // pont live create_audit : le panel Investigation suit le run pendant le tour
           setThread(ev.thread)
+          setThreads(previous => previous.map(item => item.id === ev.thread.id ? { ...item, ...ev.thread } : item))
         } else if (ev.type === 'compaction') {
           if (ev.status === 'compacted') {
             setNotice({
@@ -209,9 +225,10 @@ export function useChatWorkspace() {
   )
 
   const send = useCallback(
-    async (content: string) => {
-      if (!activeId || isRunning || !content.trim()) return
-      await runTurn(activeId, { content: content.trim(), mode: 'new' })
+    async (content: string, threadId?: string) => {
+      const targetId = threadId ?? activeId
+      if (!targetId || isRunning || !content.trim()) return
+      await runTurn(targetId, { content: content.trim(), mode: 'new' })
     },
     [activeId, isRunning, runTurn],
   )
@@ -238,11 +255,12 @@ export function useChatWorkspace() {
 
   const cancel = useCallback(async () => {
     if (!activeId) return
-    abortRef.current?.abort()
     try {
+      // Garder le flux ouvert pour recevoir le message partiel persisté par le backend.
       await cancelTurn(activeId)
     } catch {
-      // le backend finalise de toute façon le message partiel
+      abortRef.current?.abort()
+      setNotice({ kind: 'error', text: 'Annulation non confirmée par le serveur : connexion interrompue.' })
     }
   }, [activeId])
 
@@ -270,6 +288,12 @@ export function useChatWorkspace() {
     },
     [activeId, isRunning, loadThread],
   )
+
+  const updateMetadata = useCallback(async (id: string, changes: { title?: string; pinned?: boolean }) => {
+    const { thread: updated } = await updateThread(id, changes)
+    setThreads(previous => previous.map(item => item.id === id ? { ...item, ...updated } : item))
+    setThread(previous => previous?.id === id ? { ...previous, ...updated } : previous)
+  }, [])
 
   const archive = useCallback(
     async (id: string) => {
@@ -315,6 +339,7 @@ export function useChatWorkspace() {
     regenerate,
     cancel,
     switchBranch,
+    updateMetadata,
     archive,
     restore,
     remove,

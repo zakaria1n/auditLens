@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import type { ThreadMeta } from '../../lib/chatApi'
+import { Dialog } from '../ui/dialog'
+import { ThreadRow } from './ThreadRow'
 
 interface Props {
   threads: ThreadMeta[]
@@ -12,6 +14,7 @@ interface Props {
   onArchive: (id: string) => void
   onRestore: (id: string) => void
   onDelete: (id: string) => void
+  onUpdate: (id: string, changes: { title?: string; pinned?: boolean }) => Promise<void>
   /** ferme le tiroir mobile après une navigation du menu (ADR-17) */
   onNavigate?: () => void
 }
@@ -171,9 +174,11 @@ export function ThreadSidebar({
   onArchive,
   onRestore,
   onDelete,
+  onUpdate,
   mobileOpen = false,
   onCloseMobile,
 }: SidebarProps) {
+  const [deleteTarget, setDeleteTarget] = useState<ThreadMeta | null>(null)
   const [filter, setFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
 
@@ -199,9 +204,10 @@ export function ThreadSidebar({
           className="fixed inset-0 z-30 bg-slate-900/40 md:hidden"
         />
       )}
+      <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Supprimer la conversation ?" description={deleteTarget?.title} footer={<><button type="button" onClick={() => setDeleteTarget(null)} className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Annuler</button><button type="button" onClick={() => { if (deleteTarget) onDelete(deleteTarget.id); setDeleteTarget(null) }} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">Supprimer</button></>}><p className="text-sm text-slate-600">La conversation sera masquée. Les messages, les audits et les preuves restent conservés pour la traçabilité.</p></Dialog>
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex w-[260px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/95 backdrop-blur transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:bg-slate-50/70 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          mobileOpen ? 'visible translate-x-0' : 'invisible -translate-x-full md:visible'
         }`}
         aria-label="Conversations"
       >
@@ -251,56 +257,11 @@ export function ThreadSidebar({
           {visible.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-slate-400">Aucune conversation</p>
           )}
-          <ul className="flex flex-col gap-0.5">
-            {visible.map((t) => (
-              <li key={t.id} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelect(t.id)
-                    closeMobile()
-                  }}
-                  className={`w-full truncate rounded-lg px-3 py-2 pr-14 text-left text-sm transition-colors ${
-                    activeId === t.id
-                      ? 'bg-indigo-100 font-medium text-indigo-800'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                  title={t.title}
-                >
-                  {t.title}
-                </button>
-                <span className="absolute right-1.5 top-1.5 hidden gap-0.5 group-hover:flex">
-                  {t.status === 'archived' ? (
-                    <button
-                      type="button"
-                      aria-label="Restaurer"
-                      onClick={() => onRestore(t.id)}
-                      className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-emerald-600"
-                    >
-                      ↩
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label="Archiver"
-                      onClick={() => onArchive(t.id)}
-                      className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-amber-600"
-                    >
-                      🗂
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    aria-label="Supprimer (messages et preuves conservés)"
-                    onClick={() => onDelete(t.id)}
-                    className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-red-600"
-                  >
-                    🗑
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
+          {([true, false] as const).map(pinned => {
+            const section = visible.filter(t => Boolean(t.pinned) === pinned)
+            if (!section.length) return null
+            return <section key={String(pinned)} className="mb-3"><h2 className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{pinned ? 'Épinglées' : 'Conversations'}</h2><ul className="flex flex-col gap-0.5">{section.map(t => <ThreadRow key={t.id} thread={t} active={activeId === t.id} disabled={isRunning} onSelect={() => { onSelect(t.id); closeMobile() }} onUpdate={changes => onUpdate(t.id, changes)} onArchive={() => onArchive(t.id)} onRestore={() => onRestore(t.id)} onDelete={() => setDeleteTarget(t)} />)}</ul></section>
+          })}
         </nav>
 
         <AuditLensMenu onNavigate={closeMobile} />

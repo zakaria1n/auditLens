@@ -1,15 +1,13 @@
 import { useState } from 'react'
 import {
   createSource,
-  listRuleSets,
   listSources,
   testSource,
-  uploadFileSource,
 } from '../lib/api'
 import type { SourceConnection, SourceType } from '../lib/types'
 import { errorMessage, useAsync } from '../lib/useAsync'
 import { EmptyState } from '../components/EmptyState'
-import { ApiIcon, DatabaseIcon, FileIcon, GlobeIcon, PlusIcon } from '../components/icons'
+import { ApiIcon, DatabaseIcon, GlobeIcon, PlusIcon } from '../components/icons'
 import { PageHeader } from '../components/PageHeader'
 import { SourceCard } from '../components/SourceCard'
 import { Button } from '../components/ui/button'
@@ -17,7 +15,6 @@ import { Dialog } from '../components/ui/dialog'
 import { Field, Input, Select } from '../components/ui/input'
 
 const WIZARD_TYPES: { type: SourceType; label: string; description: string; icon: typeof DatabaseIcon }[] = [
-  { type: 'file', label: 'Fichier', description: 'CSV, XLSX ou JSON (≤ 25 Mo) avec un contrat de données', icon: FileIcon },
   { type: 'odoo', label: 'Odoo', description: 'Instance locale : URL, base, utilisateur, mot de passe', icon: DatabaseIcon },
   { type: 'api', label: 'API', description: 'base_url + endpoints déclarés, OpenAPI optionnel', icon: ApiIcon },
   { type: 'web', label: 'Web', description: 'Parcours de contrôle pas-à-pas sur un site', icon: GlobeIcon },
@@ -73,11 +70,6 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Fichier
-  const [file, setFile] = useState<File | null>(null)
-  const ruleSetsState = useAsync(listRuleSets, [])
-  const [ruleSetId, setRuleSetId] = useState('')
-
   // Odoo
   const [odooUrl, setOdooUrl] = useState('')
   const [odooDb, setOdooDb] = useState('')
@@ -98,8 +90,6 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
   // Service local explicite (docs/08 : loopback interdit sauf configuration explicite)
   const [allowPrivate, setAllowPrivate] = useState(false)
 
-  const ruleSets = ruleSetsState.data?.rule_sets ?? []
-
   function resetForm() {
     setError(null)
   }
@@ -113,15 +103,7 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
     setBusy(true)
     try {
       let created: SourceConnection
-      if (wizardType === 'file') {
-        if (!file) {
-          setError('Sélectionnez un fichier CSV, XLSX ou JSON.')
-          setBusy(false)
-          return
-        }
-        const res = await uploadFileSource(name.trim(), ruleSetId, file)
-        created = res.source
-      } else if (wizardType === 'odoo') {
+      if (wizardType === 'odoo') {
         if (!odooUrl.trim()) {
           setError('config.url est requis pour Odoo.')
           setBusy(false)
@@ -247,34 +229,6 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
                 placeholder="ex. ERP démo, API facturation…"
               />
             </Field>
-
-            {wizardType === 'file' ? (
-              <>
-                <Field label="Fichier (CSV / XLSX / JSON, ≤ 25 Mo)" required htmlFor="src-file">
-                  <Input
-                    id="src-file"
-                    type="file"
-                    accept=".csv,.xlsx,.json"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  />
-                </Field>
-                <Field
-                  label="Contrat de données (rule_set)"
-                  required
-                  htmlFor="src-ruleset"
-                  hint={ruleSets.find((r) => r.id === ruleSetId)?.contract_note}
-                >
-                  <Select id="src-ruleset" value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
-                    <option value="">— Choisir un rule_set —</option>
-                    {ruleSets.map((rs) => (
-                      <option key={rs.id} value={rs.id}>
-                        {rs.name} ({rs.id})
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </>
-            ) : null}
 
             {wizardType === 'odoo' ? (
               <>
@@ -496,9 +450,6 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
           </div>
         )}
 
-        {ruleSetsState.error ? (
-          <p className="text-xs text-amber-700">Catalogue rule_sets indisponible : {ruleSetsState.error}</p>
-        ) : null}
         {error ? <p className="text-xs text-red-600">{error}</p> : null}
       </div>
     </Dialog>
@@ -510,7 +461,7 @@ export function ConnectionsPage() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const sources = sourcesState.data?.sources ?? []
+  const sources = (sourcesState.data?.sources ?? []).filter(source => source.type !== 'file')
 
   return (
     <>
@@ -541,7 +492,7 @@ export function ConnectionsPage() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="Aucune source"
-          description="Ajoutez votre première source : Odoo, API, site web ou fichier CSV/XLSX/JSON."
+          description="Ajoutez une connexion Odoo, API ou Web. Les fichiers sont ajoutés depuis la conversation."
           action={<Button onClick={() => setWizardOpen(true)}>Ajouter une source</Button>}
         />
       ) : (

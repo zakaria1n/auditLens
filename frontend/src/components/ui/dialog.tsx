@@ -24,8 +24,16 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
 
   useEffect(() => {
     if (!open) return
+    const previousFocus = document.activeElement as HTMLElement | null
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
+      if (e.key === 'Tab' && panelRef.current) {
+        const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'))
+        if (!items.length) return
+        const first = items[0], last = items[items.length - 1]
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
     }
     window.addEventListener('keydown', onKey)
     // focus initial : premier champ interactif du contenu (justification…)
@@ -38,6 +46,7 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
     return () => {
       window.removeEventListener('keydown', onKey)
       cancelAnimationFrame(raf)
+      previousFocus?.focus()
     }
   }, [open, onClose])
 
