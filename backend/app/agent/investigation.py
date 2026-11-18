@@ -30,13 +30,23 @@ DECISION_SCHEMA = {
     "args": {},
     "rationale": "str — pourquoi cette action maintenant",
     "hypotheses": [{"id": "str", "statement": "str", "status": "open|supported|rejected|inconclusive",
-                    "evidence_refs": ["ev_..."]}],
+                    "evidence_refs": ["ev_..."],
+                    "alternatives": [{"id": "str", "statement": "str", "evidence_refs": ["ev_..."]}],
+                    "contradicted_by": ["ev_..."], "revision_note": "str"}],
     "stop_rationale": "str|null (si stop)",
     "info_request": "str|null (si request_human_input)",
 }
 
 HYPOTHESIS_STATUSES = ("open", "supported", "rejected", "inconclusive")
 DECISION_KINDS = ("call_tool", "update_hypotheses", "request_human_input", "stop")
+
+CHALLENGER_CONSIGNES = (
+    "CHALLENGER (obligatoire avant toute conclusion 'supported') : "
+    "Genere au moins UNE explication alternative plausible (alternatives) ; "
+    "cherche des preuves CONTRAIRES et liste-les (contradicted_by) ; "
+    "si une alternative est mieux etayee, revise l'hypothese (status) et documente "
+    "le changement via revision_note ; distingue suspect (inconclusive) de confirme (supported)."
+)
 
 MAX_OBSERVATIONS = 8  # observations récentes renvoyées au LLM (borné, docs/06)
 MAX_HYPOTHESES = 8
@@ -52,16 +62,38 @@ STAGNATION_ERROR_STOP = 5    # 5 erreurs consécutives sans succès → arrêt f
 
 
 @dataclass
+class HypothesisRevision:
+    """Revision horodatee d'une hypothese (Phase 4/10 - Hypothesis Challenger)."""
+
+    turn: int
+    status: str
+    statement: str
+    evidence_refs: list[str]
+    note: str = ""  # pourquoi cette revision (rationale de la decision)
+
+    def to_dict(self) -> dict:
+        return {"turn": self.turn, "status": self.status, "statement": self.statement,
+                "evidence_refs": list(self.evidence_refs), "note": self.note}
+
+
+@dataclass
 class Hypothesis:
     id: str
     statement: str
     status: str = "open"  # open | supported | rejected | inconclusive
     evidence_refs: list[str] = field(default_factory=list)
+    # Phase 4/10 - Challenger : explications alternatives et contradictions cherchees
+    alternatives: list[dict] = field(default_factory=list)   # [{id, statement, evidence_refs}]
+    contradicted_by: list[str] = field(default_factory=list)  # evidence_refs contraires
+    revisions: list[HypothesisRevision] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id, "statement": self.statement, "status": self.status,
             "evidence_refs": list(self.evidence_refs),
+            "alternatives": list(self.alternatives),
+            "contradicted_by": list(self.contradicted_by),
+            "revisions": [r.to_dict() for r in self.revisions],
         }
 
 
@@ -177,12 +209,37 @@ class InvestigationState:
             if invalid:
                 notes.append(f"hypothèse {hid}: evidence_refs ignorées (inexistantes/hors mission): {invalid}")
             statement = str(raw.get("statement") or "")[:500]
+            alternatives = [
+                {
+                    "id": str(a.get("id") or f"alt_{i + 1}"),
+                    "statement": str(a.get("statement") or "")[:500],
+                    "evidence_refs": [str(r) for r in (a.get("evidence_refs") or []) if str(r) in evidence_index],
+                }
+                for i, a in enumerate(raw.get("alternatives") or []) if isinstance(a, dict)
+            ][:5]
+            contradicted_by = [str(r) for r in (raw.get("contradicted_by") or []) if str(r) in evidence_index]
             existing = by_id.get(hid)
             if existing is not None:
+                changed = (
+                    existing.statement != statement or existing.status != status
+                    or existing.evidence_refs != refs
+                )
+                if changed:
+                    existing.revisions.append(HypothesisRevision(
+                        turn=self.decisions, status=existing.status,
+                        statement=existing.statement,
+                        evidence_refs=list(existing.evidence_refs),
+                        note=str(raw.get("revision_note") or "")[:300],
+                    ))
                 existing.statement, existing.status, existing.evidence_refs = statement, status, refs
+                existing.alternatives = alternatives
+                existing.contradicted_by = contradicted_by
                 kept.append(existing)
             else:
-                kept.append(Hypothesis(id=hid, statement=statement, status=status, evidence_refs=refs))
+                kept.append(Hypothesis(
+                    id=hid, statement=statement, status=status, evidence_refs=refs,
+                    alternatives=alternatives, contradicted_by=contradicted_by,
+                ))
         self.hypotheses = kept
         return notes
 
@@ -271,7 +328,7 @@ def investigation_request(
         "conclusions (update_hypotheses) puis stop — tout nouvel appel requiert une extension de "
         "budget approuvée par l'auditeur. Utilise `update_hypotheses` pour consigner une "
         "hypothèse ou la réviser (status open|supported|rejected|inconclusive, evidence_refs REELS "
-        "seulement). `stop` quand les preuves suffisantes sont collectées OU que le budget est "
+        "seulement). " + CHALLENGER_CONSIGNES + " `stop` quand les preuves suffisantes sont collectées OU que le budget est "
         "presque épuisé OU qu'aucune investigation utile reste possible (stop_rationale obligatoire). "
         "Un constat s'appuiera sur ces preuves : si un détail précis manque (lignes d'un écart, "
         "enregistrement référencé par une liste, extrait d'une violation), préfère get_evidence_excerpt, "

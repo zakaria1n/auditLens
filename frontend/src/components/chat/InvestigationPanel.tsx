@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { extendBudget, getMission, getRun, pauseRun, resumeRun, runFindings, stopRun } from '../../lib/api'
@@ -6,6 +6,7 @@ import type { AuditMission, AuditRun, Finding, RunEvent } from '../../lib/types'
 import { subscribeRunEvents } from '../../lib/sse'
 import { EvidenceDetailPanel } from '../EvidenceDetailPanel'
 import { FindingCard } from '../FindingCard'
+import { HypothesisComparison, useHypotheses } from '../../features/hypotheses/HypothesisComparison'
 
 interface PanelProps {
   missionIds: string[]
@@ -24,33 +25,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'findings', label: 'Constats' },
 ]
 
-interface HypothesisView {
-  id: string
-  statement: string
-  status: string
-  evidenceRefs: string[]
-}
 
-/** Hypothèses reconstruites depuis les événements backend réels du run. */
-function useHypotheses(events: RunEvent[]): HypothesisView[] {
-  return useMemo(() => {
-    const map = new Map<string, HypothesisView>()
-    for (const ev of events) {
-      const data = ev.data as Record<string, unknown>
-      if (ev.type === 'hypothesis_created' || ev.type === 'hypothesis_updated') {
-        map.set(String(data.id ?? '?'), {
-          id: String(data.id ?? '?'),
-          statement: String(data.statement ?? ''),
-          status: String(data.status ?? 'open'),
-          evidenceRefs: Array.isArray(data.evidence_refs) ? (data.evidence_refs as string[]) : [],
-        })
-      } else if (ev.type === 'hypothesis_rejected') {
-        for (const h of map.values()) h.status = 'partiellement rejetée'
-      }
-    }
-    return Array.from(map.values())
-  }, [events])
-}
 
 function StatusChip({ status }: { status: string }) {
   const cls =
@@ -100,45 +75,6 @@ function BudgetBar({ run, events }: { run: AuditRun | null; events: RunEvent[] }
   )
 }
 
-function HypothesisCard({
-  h,
-  onOpenEvidence,
-  missionId,
-}: {
-  h: HypothesisView
-  onOpenEvidence: (id: string, m: string) => void
-  missionId: string
-}) {
-  const tone =
-    h.status === 'supported'
-      ? 'text-emerald-600'
-      : h.status === 'rejected' || h.status.includes('rejetée')
-        ? 'text-red-600'
-        : 'text-amber-600'
-  return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-      <p className="flex items-center justify-between gap-2 text-[11px]">
-        <span className="font-mono text-slate-400">{h.id}</span>
-        <span className={`font-medium ${tone}`}>{h.status}</span>
-      </p>
-      <p className="mt-1 text-[13px] leading-relaxed text-slate-600">{h.statement}</p>
-      {h.evidenceRefs.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {h.evidenceRefs.map((ref) => (
-            <button
-              key={ref}
-              type="button"
-              onClick={() => onOpenEvidence(ref, missionId)}
-              className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700 transition-colors hover:bg-violet-100"
-            >
-              {ref}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** Un run : en-tête permanent (statut, budget, contrôles) + contenu de l'onglet actif. */
 function RunSection({
@@ -146,11 +82,13 @@ function RunSection({
   approvedActiveTests,
   tab,
   onOpenEvidence,
+  onSteer,
 }: {
   runId: string
   approvedActiveTests: boolean
   tab: Tab
   onOpenEvidence: (evidenceId: string, missionId: string) => void
+  onSteer?: (instruction: string) => void
 }) {
   const [run, setRun] = useState<AuditRun | null>(null)
   const [events, setEvents] = useState<RunEvent[]>([])
@@ -336,15 +274,14 @@ function RunSection({
         )}
 
         {tab === 'hypotheses' && (
-          <div className="space-y-2">
-            {hypotheses.length === 0 ? (
-              <p className="text-xs text-slate-400">Aucune hypothèse consignée.</p>
-            ) : (
-              hypotheses.map((h) => (
-                <HypothesisCard key={h.id} h={h} onOpenEvidence={onOpenEvidence} missionId={missionId} />
-              ))
+          <HypothesisComparison
+            hypotheses={hypotheses}
+            onOpenEvidence={onOpenEvidence}
+            missionId={missionId}
+            onInvestigateAlternative={(hypId, altId, statement) => onSteer?.(
+              `Investigue l'explication alternative ${altId} de l'hypothèse ${hypId} : « ${statement} » — confronte-la aux preuves déjà collectées.`,
             )}
-          </div>
+          />
         )}
 
         {tab === 'evidence' && (
@@ -394,7 +331,9 @@ function RunSection({
 }
 
 /** Panneau Investigation (droite) : 360px en desktop large, tiroir overlay sous `xl`. */
-export function InvestigationPanel({ missionIds, runIds, mobileOpen = false, onCloseMobile }: PanelProps) {
+export function InvestigationPanel({
+  missionIds, runIds, onSteer, mobileOpen = false, onCloseMobile,
+}: PanelProps & { onSteer?: (instruction: string) => void }) {
   const [open, setOpen] = useState(true)
   const [missions, setMissions] = useState<AuditMission[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
@@ -500,6 +439,7 @@ export function InvestigationPanel({ missionIds, runIds, mobileOpen = false, onC
                 approvedActiveTests={approvedActiveTests}
                 tab={tab}
                 onOpenEvidence={(evidenceId, missionId) => setDrawer({ evidenceId, missionId })}
+                onSteer={onSteer}
               />
             </div>
           )}
