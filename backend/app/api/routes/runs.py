@@ -209,6 +209,34 @@ async def list_run_findings(run_id: str, request: Request):
     return {"findings": [f.model_dump() for f in await d.repo.list_findings(run_id=run_id)]}
 
 
+@router.get("/{run_id}/diff")
+async def diff_runs(run_id: str, request: Request, base: str = ""):
+    """Différentiel de findings entre le run de référence (base) et ce run (Phase 6/10).
+    Statuts : persistent / resolved (contrôle ré-inspecté avec preuves) / new / unknown."""
+    from ..audit.diff_audit import diff_findings
+
+    d = deps(request)
+    target = await d.repo.get_run(run_id)
+    if target is None:
+        raise HTTPException(404, "run cible inconnu")
+    base_run = await d.repo.get_run(base) if base else None
+    if base_run is None:
+        raise HTTPException(404, "run de référence (base) inconnu")
+    if base_run.mission_id != target.mission_id:
+        raise HTTPException(400, "les deux runs doivent appartenir à la même mission")
+
+    base_findings = await d.repo.list_findings(run_id=base)
+    target_findings = await d.repo.list_findings(run_id=run_id)
+    # contrôles réellement ré-inspectés par le run cible : assessments avec evidence
+    inspected = {
+        a.control_id
+        for a in await d.repo.list_assessments(run_id)
+        if a.evidence_refs
+    }
+    result = diff_findings(base_findings, target_findings, inspected)
+    return {"base_run_id": base, "target_run_id": run_id, **result}
+
+
 @router.get("/{run_id}/report")
 async def get_report(run_id: str, request: Request):
     d = deps(request)

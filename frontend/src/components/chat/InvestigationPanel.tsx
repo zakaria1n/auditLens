@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { extendBudget, getMission, getRun, pauseRun, resumeRun, runFindings, stopRun } from '../../lib/api'
+import { API_BASE, extendBudget, getMission, getRun, pauseRun, resumeRun, runFindings, stopRun } from '../../lib/api'
 import type { AuditMission, AuditRun, Finding, RunEvent } from '../../lib/types'
 import { subscribeRunEvents } from '../../lib/sse'
 import { EvidenceDetailPanel } from '../EvidenceDetailPanel'
 import { FindingCard } from '../FindingCard'
+import { BeforeAfterAuditView, useRunDiff } from '../../features/differential-audit/BeforeAfterAuditView'
 import { CoverageMap, useCoverage } from '../../features/audit-coverage/CoverageMap'
 import { HypothesisComparison, useHypotheses } from '../../features/hypotheses/HypothesisComparison'
 
@@ -89,6 +90,39 @@ function CoverageSection({
   if (error) return <p className="text-xs text-red-600">Couverture indisponible : {error}</p>
   if (!coverage) return <p className="text-xs text-slate-400">Chargement de la couverture…</p>
   return <CoverageMap coverage={coverage} onOpenEvidence={onOpenEvidence} missionId={missionId} />
+}
+
+
+function DiffInline({ missionId, targetRunId }: { missionId: string; targetRunId: string }) {
+  const runs = useRunIds(missionId)
+  const others = runs.filter((r) => r !== targetRunId)
+  if (others.length === 0) return null
+  const baseRun = others[others.length - 1] // run précédent le plus ancien lié au thread
+  const { diff, error, loading } = useRunDiff(missionId, baseRun, targetRunId)
+  if (loading) return <p className="text-xs text-slate-400">Comparaison…</p>
+  if (error) return <p className="text-xs text-slate-400">Différentiel indisponible : {error}</p>
+  if (!diff || diff.entries.length === 0) return null
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Différentiel vs {baseRun}
+      </p>
+      <BeforeAfterAuditView diff={diff} onVerifyFix={(controlId, title) => console.info('verify-fix', controlId, title)} />
+    </div>
+  )
+}
+
+function useRunIds(missionId: string): string[] {
+  const [ids, setIds] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API_BASE}/api/missions/${missionId}/runs`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setIds((d.runs ?? []).map((r: { id: string }) => r.id)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [missionId])
+  return ids
 }
 
 /** Un run : en-tête permanent (statut, budget, contrôles) + contenu de l'onglet actif. */
@@ -259,6 +293,9 @@ function RunSection({
                 <p className="text-[11px] text-slate-400">constats</p>
               </div>
             </div>
+            {missionId && runId && (
+              <DiffInline missionId={missionId} targetRunId={runId} />
+            )}
             <p className="px-1 text-[11px] leading-relaxed text-slate-400">
               Événements backend réels (SSE). Les autres onglets détaillent l'activité, les
               hypothèses, les preuves et les constats.
@@ -455,7 +492,7 @@ export function InvestigationPanel({
                 runId={selectedRun}
                 approvedActiveTests={approvedActiveTests}
                 tab={tab}
-                onOpenEvidence={(evidenceId, missionId) => setDrawer({ evidenceId, missionId })}
+                onOpenEvidence={(evidenceId, mid) => setDrawer({ evidenceId, missionId: mid })}
                 onSteer={onSteer}
               />
             </div>
