@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
+import { steerRun } from '../lib/api'
 import { useChatWorkspaceCtx } from '../lib/chatWorkspaceContext'
 import { ChatCenter } from './chat/ChatCenter'
 import { InvestigationPanel } from './chat/InvestigationPanel'
@@ -66,6 +67,20 @@ export function AppShell() {
           {!!ws.thread?.run_ids.length && <InvestigationPanel
             missionIds={ws.thread?.mission_ids ?? []}
             runIds={ws.thread?.run_ids ?? []}
+            onSteer={async (instruction) => {
+              const runIds = ws.thread?.run_ids ?? []
+              const runId = runIds[runIds.length - 1]
+              if (runId) {
+                try {
+                  await steerRun(runId, instruction)
+                  return // routé vers la file du run ; statuts visibles via events panel
+                } catch {
+                  // run non pilotable (terminé/inconnu) => fallback conversation
+                }
+              }
+              const text = `Pilotage : ${instruction} — intègre cette consigne dans l'investigation en cours.`
+              if (ws.activeId) await ws.send(text)
+            }}
             mobileOpen={investigationOpen}
             onCloseMobile={() => setInvestigationOpen(false)}
           />}

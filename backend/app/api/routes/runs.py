@@ -245,7 +245,7 @@ async def list_run_findings(run_id: str, request: Request):
 async def diff_runs(run_id: str, request: Request, base: str = ""):
     """Différentiel de findings entre le run de référence (base) et ce run (Phase 6/10).
     Statuts : persistent / resolved (contrôle ré-inspecté avec preuves) / new / unknown."""
-    from ..audit.diff_audit import diff_findings
+    from ...audit.diff_audit import diff_findings
 
     d = deps(request)
     target = await d.repo.get_run(run_id)

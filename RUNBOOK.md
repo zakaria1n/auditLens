@@ -12,10 +12,28 @@
 ```bash
 cd backend
 uv sync
-uv run pytest                       # 18 tests (mock LLM, aucun réseau)
+uv run pytest                       # 130+ tests (mock LLM, aucun réseau)
 uv run python demo_data/generate_demo.py all   # jeux de données démo
 uv run uvicorn app.main:app --port 8000 --reload
 ```
+
+### Anti-serveur-stale (Phase 1 stabilisation)
+
+Un backend lancé avant des modifications de code sert une version périmée (routes
+Phase 5+ en 404). Procédure fiable :
+
+```bash
+# 1. libérer le port si un uvicorn orphelin y survit (Windows)
+netstat -ano | grep ":8000" | grep LISTENING     # => PID
+taskkill //F //PID <PID>
+
+# 2. démarrer et VÉRIFIER que les routes récentes répondent
+cd backend && uv run uvicorn app.main:app --port 8000
+curl -s http://localhost:8000/api/missions/<mission_id>/coverage   # 200 attendu
+curl -s http://localhost:8000/api/reports                          # 200 attendu
+```
+
+Un 404 sur /coverage ou /reports = serveur périmé : tuer le PID et relancer.
 
 - API : http://localhost:8000 — docs interactives : http://localhost:8000/docs
 - Contrat d'API exact : [docs/CONTRAT_API_IMPL.md](docs/CONTRAT_API_IMPL.md)

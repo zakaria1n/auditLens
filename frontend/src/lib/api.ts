@@ -288,6 +288,13 @@ export function testLLMConfig(body?: LLMConfigBody) {
 
 // ---- Contrôle d'investigation (ADR-15 : pause / reprise / budget) ----
 
+export function steerRun(runId: string, instruction: string) {
+  return request<{ steering: { id: string; status: string } }>(
+    `/api/runs/${runId}/steer`,
+    { method: 'POST', body: JSON.stringify({ instruction }) },
+  )
+}
+
 export function pauseRun(id: string) {
   return request<{ ok: boolean }>(`/api/runs/${id}/pause`, { method: 'POST' })
 }

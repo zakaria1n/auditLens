@@ -272,7 +272,7 @@ async def mission_coverage(mission_id: str, request: Request):
     """Couverture RÉELLE des contrôles (Phase 5/10) : calculée depuis assessments,
     findings et tool_calls backend. « not_tested » n'est jamais un pass ; aucun
     score global trompeur n'est produit."""
-    from ..audit.coverage import compute_coverage
+    from ...audit.coverage import compute_coverage
 
     d = deps(request)
     mission = await d.repo.get_mission(mission_id)
