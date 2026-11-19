@@ -762,10 +762,17 @@ async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
     """Exploration bornée et déterministe d'une evidence d'enregistrements (Phase 2/10).
     Le LLM décide QUOI explorer ; les calculs sont exécutés ici (aucun SQL, aucune
     exécution arbitraire). Le résultat devient une evidence `exploration` traçable."""
-    from ..audit.exploration import apply_exploration
+    from ..audit.exploration import MAX_EXPLORE_ROWS, apply_exploration
 
     ev, full = await _load_evidence(ctx, args["evidence_id"])
     records = _records_from_payload(full)
+    if not records and ev.type == "raw_file" and (full.get("payload") or {}).get("path"):
+        # fichier source (CSV/XLSX/JSON) : enregistrements normalisés via le connecteur
+        from ..connectors.files.connector import FileConnector
+
+        fc = FileConnector({"path": (full.get("payload") or {}).get("path"),
+                            "original_name": ev.title})
+        records = await fc.load_records(limit=MAX_EXPLORE_ROWS)
     if not records:
         return ToolResult(
             tool_call_id="", tool="data_explore", source_id=ev.source_id,

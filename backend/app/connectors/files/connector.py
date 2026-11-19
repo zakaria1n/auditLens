@@ -29,21 +29,14 @@ class FileConnector:
             return pd.read_csv(self.path)
         if suffix == ".xlsx":
             return pd.read_excel(self.path, engine="openpyxl")
-        if suffix == ".json":
-            with open(self.path, encoding="utf-8") as fh:
-                data = json.load(fh)
-            if isinstance(data, list):
-                import pandas as pd
+        if suffix in (".json", ".jsonl"):
+            from .json_parser import load_json_records
 
-                return pd.DataFrame(data)
-            if isinstance(data, dict) and isinstance(next(iter(data.values()), None), list):
-                # {"records": [...]} — première liste trouvée
-                for v in data.values():
-                    if isinstance(v, list):
-                        return pd.DataFrame(v)
-                raise ValueError("JSON sans tableau d'enregistrements")
-            raise ValueError("JSON doit être un tableau d'objets ou un objet contenant un tableau")
-        raise ValueError(f"format non supporté en V1: {suffix} (CSV/XLSX/JSON uniquement)")
+            records, _structure = load_json_records(self.path)
+            import pandas as pd
+
+            return pd.DataFrame(records)
+        raise ValueError(f"format non supporté en V1: {suffix} (CSV/XLSX/JSON/JSONL uniquement)")
 
     async def load_dataframe(self):
         import asyncio
@@ -53,7 +46,7 @@ class FileConnector:
     async def test_connection(self) -> tuple[bool, str]:
         if not self.path.exists():
             return False, f"connection_failed: fichier introuvable: {self.path.name}"
-        if self._suffix() not in (".csv", ".xlsx", ".json"):
+        if self._suffix() not in (".csv", ".xlsx", ".json", ".jsonl"):
             return False, f"connection_failed: extension non supportée {self._suffix()}"
         try:
             df = await self.load_dataframe()
@@ -62,9 +55,14 @@ class FileConnector:
             return False, f"connection_failed: {type(exc).__name__}: {exc}"
 
     async def discover(self) -> dict[str, Any]:
-        df = await self.load_dataframe()
         size_bytes = self.path.stat().st_size
-        return {
+        json_structure = None
+        if self._suffix() in (".json", ".jsonl"):
+            from .json_parser import load_json_records
+
+            _records, json_structure = load_json_records(self.path)
+        df = await self.load_dataframe()
+        out = {
             "connector": "file",
             "file": self.original_name,
             "format": self._suffix().lstrip("."),
@@ -81,6 +79,25 @@ class FileConnector:
             ],
             "size_bytes": size_bytes,
         }
+        if json_structure is not None:
+            out["json_structure"] = json_structure
+        return out
+
+    async def load_records(self, limit: int = 5000) -> list[dict[str, Any]]:
+        """Enregistrements normalisés (JSON aplati chemins pointés, CSV/XLSX lignes) —
+        borné, pour data_explore / correlate_records sur une evidence raw_file."""
+        import asyncio
+
+        def _sync() -> list[dict[str, Any]]:
+            if self._suffix() in (".json", ".jsonl"):
+                from .json_parser import load_json_records
+
+                records, _structure = load_json_records(self.path)
+                return records[:limit]
+            df = self._load_sync()
+            return df.head(limit).to_dict(orient="records")
+
+        return await asyncio.to_thread(_sync)
 
     async def close(self) -> None:
         return None
