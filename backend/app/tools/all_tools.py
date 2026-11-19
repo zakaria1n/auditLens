@@ -19,6 +19,19 @@ from ..connectors.ssrf import validate_url
 from ..core.errors import EvidenceNotFound
 from ..core.ids import new_id
 from ..core.redact import redact
+from .odoo_generic_tools import (
+    OdooAggregateInput,
+    OdooDescribeModelInput,
+    OdooFollowRelationInput,
+    OdooListModelsInput,
+    OdooQueryRecordsInput,
+    tool_odoo_aggregate_records,
+    tool_odoo_describe_model,
+    tool_odoo_follow_relation,
+    tool_odoo_list_models,
+    tool_odoo_query_records,
+    _validate_domain as _odoo_validate_domain,
+)
 from ..harness.contracts import ToolContext, ToolResult
 from ..models import PermissionLevel, SourceType
 
@@ -1010,6 +1023,26 @@ TOOL_DEFS: list[dict] = [
           "Exploration bornée et DÉTERMINISTE d'une evidence d'enregistrements : filtre, tri, group_by+agrégat (count/sum/avg/min/max), comparaison de champs, projection, limite. Spéc JSON typée — calculs exécutés par le backend, jamais par le modèle.",
           [], PermissionLevel.local, DataExploreInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "spec": {"type": "object", "properties": {"fields": {"type": "array", "items": {"type": "string"}}, "filter": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "not_null"]}, "value": {}}}}, "sort": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "dir": {"type": "string", "enum": ["asc", "desc"]}}}}, "group_by": {"type": "string"}, "aggregate": {"type": "object", "properties": {"op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}, "field": {"type": "string"}}}, "compare": {"type": "object", "properties": {"left_field": {"type": "string"}, "right_field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte"]}}}, "limit": {"type": "integer"}}}, "required": ["evidence_id", "spec"]}}),
+    _spec("odoo_list_models", "Lister les modèles Odoo",
+          "Découverte des modèles métier installés et lisibles par le compte d'audit (hors modèles techniques/sensibles).",
+          ["odoo"], PermissionLevel.read, OdooListModelsInput,
+          {"type": "object", "properties": {"source_id": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["source_id"]}),
+    _spec("odoo_describe_model", "Décrire un modèle Odoo",
+          "Métadonnées d'un modèle : champs sûrs, types, relations, nombre d'enregistrements. Modèles techniques/sensibles refusés.",
+          ["odoo"], PermissionLevel.read, OdooDescribeModelInput,
+          {"type": "object", "properties": {"model": {"type": "string"}}, "required": ["model"]}),
+    _spec("odoo_query_records", "Lire des enregistrements Odoo",
+          "search_read borné (<=200) sur n'importe quel modèle autorisé : domaine read-only allowlist, champs sûrs, ordre.",
+          ["odoo"], PermissionLevel.read, OdooQueryRecordsInput,
+          {"type": "object", "properties": {"source_id": {"type": "string"}, "model": {"type": "string"}, "domain": {"type": "array"}, "fields": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer"}, "order": {"type": "string"}}, "required": ["source_id", "model"]}),
+    _spec("odoo_follow_relation", "Suivre une relation Odoo",
+          "Suit many2one/one2many/many2many depuis un enregistrement vers son comodèle (lecture bornée).",
+          ["odoo"], PermissionLevel.read, OdooFollowRelationInput,
+          {"type": "object", "properties": {"source_id": {"type": "string"}, "model": {"type": "string"}, "record_id": {"type": "integer"}, "relation_field": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["source_id", "model", "record_id", "relation_field"]}),
+    _spec("odoo_aggregate_records", "Agréger des enregistrements Odoo",
+          "read_group borné par champ de groupement + agrégat (count/sum/avg/min/max) avec repli déterministe.",
+          ["odoo"], PermissionLevel.read, OdooAggregateInput,
+          {"type": "object", "properties": {"source_id": {"type": "string"}, "model": {"type": "string"}, "group_by": {"type": "string"}, "domain": {"type": "array"}, "aggregate_field": {"type": "string"}, "aggregate_op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}, "limit": {"type": "integer"}}, "required": ["source_id", "model", "group_by"]}),
     _spec("correlate_records", "Corréler deux systèmes",
           "Résolution d'entités GÉNÉRIQUE entre deux evidences d'enregistrements par clés explicites : liens matched/uncertain, non-correspondances, contradictions de valeurs comparées. Chaque lien cite les evidences et row_index — aucune relation inventée.",
           [], PermissionLevel.local, CorrelateRecordsInput,
@@ -1043,7 +1076,12 @@ def register_all_tools(registry) -> dict[str, type[BaseModel]]:
         "correlate_records": tool_correlate_records,
         "get_control_definition": tool_get_control_definition,
         "get_evidence_excerpt": tool_get_evidence_excerpt,
-        "evidence_search": tool_evidence_search,
+                "evidence_search": tool_evidence_search,
+        "odoo_list_models": tool_odoo_list_models,
+        "odoo_describe_model": tool_odoo_describe_model,
+        "odoo_query_records": tool_odoo_query_records,
+        "odoo_follow_relation": tool_odoo_follow_relation,
+        "odoo_aggregate_records": tool_odoo_aggregate_records,
     }
     input_models: dict[str, type[BaseModel]] = {}
     for item in TOOL_DEFS:

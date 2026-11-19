@@ -184,5 +184,163 @@ class OdooConnector:
             ),
         }
 
+    # ---------- accès générique READ-ONLY (Phase 2B/4) ----------
+
+    async def list_accessible_models(self, limit: int = 500) -> list[dict[str, Any]]:
+        """Modèles non-transitoires accessibles au compte d'audit (ir.model), hors
+        namespaces techniques/sensibles. Probe search_count => readable."""
+        from .generic import model_is_allowed
+
+        rows = await self._call(
+            "ir.model", "search_read",
+            [[["transient", "=", False]]],
+            {"fields": ["model", "name"], "limit": min(limit, 1000)},
+        )
+        out: list[dict[str, Any]] = []
+        for row in rows[:limit]:
+            model = str(row.get("model") or "")
+            if not model_is_allowed(model):
+                continue
+            try:
+                count = await self._call(model, "search_count", [[]])
+            except Exception as exc:  # accès refusé => non lisible, explicitement
+                out.append({"model": model, "name": str(row.get("name") or ""),
+                            "readable": False, "reason": str(exc)[:120]})
+                continue
+            out.append({"model": model, "name": str(row.get("name") or ""),
+                        "readable": True, "record_count": count})
+        return out
+
+    async def describe_model(self, model: str) -> dict[str, Any]:
+        """Métadonnées d'un modèle : champs sûrs, types, relations, count, accès."""
+        from .generic import model_is_allowed, relations_from_fields, sanitize_fields
+
+        if not model_is_allowed(model):
+            return {"model": model, "allowed": False,
+                    "reason": "modèle technique/sensible interdit à la lecture générique"}
+        count = await self._call(model, "search_count", [[]])
+        fields_meta = await self._call(model, "fields_get", [], {
+            "attributes": ["string", "type", "relation", "required", "store"],
+        })
+        safe = sanitize_fields(fields_meta)
+        return {
+            "model": model, "allowed": True, "record_count": count,
+            "fields": [
+                {"name": name, "string": str(meta.get("string") or name),
+                 "type": str(meta.get("type")), "relation": meta.get("relation"),
+                 "required": bool(meta.get("required"))}
+                for name, meta in sorted(safe.items())
+            ],
+            "relations": relations_from_fields(safe),
+            "excluded_sensitive_fields": sorted(set(fields_meta) - set(safe)),
+        }
+
+    async def query_records(self, model: str, domain: list, fields: list[str] | None,
+                            limit: int = 50, order: str | None = None) -> dict[str, Any]:
+        """search_read borné : champs sûrs uniquement, limite <= 200."""
+        from .generic import model_is_allowed, sanitize_fields
+
+        if not model_is_allowed(model):
+            return {"allowed": False, "error": f"modèle interdit : {model}"}
+        fields_meta = await self._call(model, "fields_get", [], {"attributes": ["type"]})
+        safe = sanitize_fields(fields_meta)
+        if fields:
+            unknown = [f for f in fields if f not in safe]
+            if unknown:
+                return {"allowed": True, "error": f"champs inconnus/refusés : {unknown}",
+                        "available_fields": sorted(safe.keys())[:100]}
+            read_fields = fields
+        else:
+            read_fields = sorted(safe.keys())[:60]
+        limit = max(1, min(int(limit), MAX_LIMIT))
+        kwargs: dict[str, Any] = {"limit": limit}
+        if order:
+            kwargs["order"] = str(order)[:120]
+        rows = await self._call(model, "search_read", [domain], {"fields": read_fields, **kwargs})
+        return {"allowed": True, "model": model, "count": len(rows), "records": rows}
+
+    async def follow_relation(self, model: str, record_id: int, relation_field: str,
+                              limit: int = 50) -> dict[str, Any]:
+        """Suit une relation depuis un enregistrement : many2one => cible ;
+        one2many/many2many => liés (lecture bornée du comodel)."""
+        from .generic import MAX_RELATION_RECORDS, model_is_allowed, sanitize_fields
+
+        if not model_is_allowed(model):
+            return {"allowed": False, "error": f"modèle source interdit : {model}"}
+        fields_meta = await self._call(model, "fields_get", [], {
+            "attributes": ["type", "relation"],
+        })
+        meta = fields_meta.get(relation_field)
+        if meta is None:
+            relations = [
+                f for f, fm in sanitize_fields(fields_meta).items()
+                if fm.get("type") in ("many2one", "one2many", "many2many")
+            ]
+            return {"allowed": True, "error": f"champ de relation inconnu : {relation_field}",
+                    "available_relations": relations}
+        ftype = str(meta.get("type"))
+        comodel = str(meta.get("relation") or "")
+        if not model_is_allowed(comodel):
+            return {"allowed": True, "error": f"comodèle interdit : {comodel}"}
+        rec = await self._call(model, "read", [[int(record_id)]], {"fields": [relation_field]})
+        if not rec:
+            return {"allowed": True, "error": f"enregistrement {record_id} introuvable dans {model}"}
+        limit = max(1, min(int(limit), MAX_RELATION_RECORDS))
+        if ftype == "many2one":
+            target = rec[0].get(relation_field) or [None]
+            target_id = target[0] if isinstance(target, list) else target
+            if not target_id:
+                return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": []}
+            rows = await self._call(comodel, "read", [[int(target_id)]])
+            return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": rows}
+        linked_ids = rec[0].get(relation_field) or []
+        ids = [int(i) for i in linked_ids][:limit]
+        if not ids:
+            return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": []}
+        rows = await self._call(comodel, "read", [ids[:limit]])
+        return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": rows,
+                "total_linked": len(linked_ids)}
+
+    async def aggregate_records(self, model: str, group_by: str, domain: list,
+                                aggregate_field: str | None = None,
+                                aggregate_op: str = "count", limit: int = 20) -> dict[str, Any]:
+        """read_group borné (ou repli déterministe par search_read borné)."""
+        from .generic import MAX_RELATION_RECORDS, model_is_allowed, sanitize_fields
+
+        if not model_is_allowed(model):
+            return {"allowed": False, "error": f"modèle interdit : {model}"}
+        fields_meta = await self._call(model, "fields_get", [], {"attributes": ["type"]})
+        safe = sanitize_fields(fields_meta)
+        if group_by not in safe:
+            return {"allowed": True, "error": f"champ de groupement inconnu : {group_by}",
+                    "available_fields": sorted(safe.keys())[:100]}
+        if aggregate_field and aggregate_field not in safe:
+            return {"allowed": True, "error": f"champ d'agrégat inconnu : {aggregate_field}"}
+        limit = max(1, min(int(limit), MAX_RELATION_RECORDS))
+        spec = [group_by]
+        if aggregate_field:
+            spec.append(aggregate_field)
+        try:
+            rows = await self._call(model, "read_group", [domain, spec, [group_by]],
+                                    {"limit": limit, "orderby": group_by + " count desc"})
+            return {"allowed": True, "model": model, "group_by": group_by,
+                    "aggregate_field": aggregate_field, "groups": rows}
+        except Exception:  # read_group indisponible => repli déterministe borné
+            read_fields = [group_by] + ([aggregate_field] if aggregate_field else [])
+            rows = await self._call(model, "search_read", [domain],
+                                    {"fields": read_fields, "limit": MAX_RELATION_RECORDS})
+            buckets: dict[str, int] = {}
+            sums: dict[str, float] = {}
+            for r in rows:
+                key = str(r.get(group_by))
+                buckets[key] = buckets.get(key, 0) + 1
+                if aggregate_field and isinstance(r.get(aggregate_field), (int, float)):
+                    sums[key] = sums.get(key, 0) + float(r[aggregate_field])
+            groups = [{"group": k, "count": c, **({"sum": sums[k]} if aggregate_field else {})}
+                      for k, c in sorted(buckets.items(), key=lambda kv: -kv[1])[:limit]]
+            return {"allowed": True, "model": model, "group_by": group_by,
+                    "fallback": "search_read", "groups": groups}
+
+
     async def close(self) -> None:
         self.uid = None
