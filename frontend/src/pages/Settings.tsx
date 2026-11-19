@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getLLMConfig, listOpencodeFreeModels, setLLMConfig, testLLMConfig } from '../lib/api'
-import type { OpencodeFreeModel } from '../lib/api'
+import { getLLMConfig, listOpencodeFreeModels, listProviderModels, setLLMConfig, testLLMConfig } from '../lib/api'
+import type { OpencodeFreeModel, ProviderModel } from '../lib/api'
 import { errorMessage, useAsync } from '../lib/useAsync'
 import { PageHeader } from '../components/PageHeader'
 import { AlertIcon, ShieldIcon } from '../components/icons'
@@ -22,6 +22,9 @@ export function SettingsPage() {
   const [busy, setBusy] = useState<'save' | 'test' | null>(null)
   const [ocModels, setOcModels] = useState<OpencodeFreeModel[] | null>(null)
   const [ocError, setOcError] = useState<string | null>(null)
+  const [curated, setCurated] = useState<ProviderModel[] | null>(null)
+  const [curatedNote, setCuratedNote] = useState<string>('')
+  const [forceCustom, setForceCustom] = useState(false)
 
   // Pré-remplissage depuis la config réelle du backend (jamais la clé).
   useEffect(() => {
@@ -57,10 +60,34 @@ export function SettingsPage() {
     }
   }, [provider])
 
+  // catalogues SUGGÉRÉS (statiques vérifiés) pour les providers à liste connue
+  useEffect(() => {
+    setCurated(null)
+    setCuratedNote('')
+    setForceCustom(false)
+    if (!['openai', 'anthropic', 'deepseek', 'gemini'].includes(provider)) return
+    let cancelled = false
+    listProviderModels(provider)
+      .then((res) => {
+        if (cancelled) return
+        setCurated(res.models)
+        setCuratedNote(res.note)
+      })
+      .catch(() => {
+        if (!cancelled) setCurated([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [provider])
+
   const keyConfigured = provider === serverConfig?.provider && (serverConfig?.key_configured ?? false)
   const providers = serverConfig?.providers_available ?? ['mock', 'opencode', 'opencode-cli', 'openai', 'gemini', 'anthropic', 'deepseek', 'compatible']
   const isOpencodeCli = provider === 'opencode-cli'
   const isOpencode = provider === 'opencode' || isOpencodeCli
+  // mode saisie manuelle : choix explicite, ou modèle courant absent des suggestions
+  const curatedLoaded = curated != null && curated.length > 0
+  const isCustomModel = curatedLoaded && (forceCustom || (model !== '' && !curated!.some((m) => m.id === model)))
 
   async function handleSave() {
     setBusy('save')
@@ -172,6 +199,47 @@ export function SettingsPage() {
                     ))}
                   </Select>
                 )
+              ) : curated && curated.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <Select
+                    id="llm-model"
+                    value={isCustomModel ? '__custom__' : model}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setForceCustom(true)
+                        setModel('')
+                      } else {
+                        setForceCustom(false)
+                        setModel(e.target.value)
+                      }
+                    }}
+                  >
+                    {isCustomModel && model && <option value={model}>{model} (actif)</option>}
+                    {curated!.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                    <option value="__custom__">Autre modèle (saisie manuelle)…</option>
+                  </Select>
+                  {isCustomModel ? (
+                    <Input
+                      id="llm-model-custom"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder="Identifiant exact du modèle (supportant les tool calls)…"
+                      aria-label="Identifiant du modèle personnalisé"
+                    />
+                  ) : null}
+                  <p className="text-[11px] leading-snug text-slate-400">{curatedNote}</p>
+                </div>
+              ) : provider === 'compatible' ? (
+                <div className="flex flex-col gap-1.5">
+                  <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="ex. glm-5.3-flash, llama3.1, mon-modele…" />
+                  <p className="text-[11px] leading-snug text-slate-400">
+                    Endpoint générique : la liste dépend du serveur (base_url) — saisissez l'identifiant exact supportant les tool calls.
+                  </p>
+                </div>
               ) : (
                 <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} />
               )}

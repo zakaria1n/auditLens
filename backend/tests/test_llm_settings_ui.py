@@ -60,3 +60,46 @@ async def test_quick_model_change_preserves_provider_credentials_and_url(client)
     assert (await client.patch('/api/settings/llm/model', json={'provider':'opencode','model':'big-pickle'})).status_code == 409
     assert (await client.patch('/api/settings/llm/model', json={'provider':'compatible','model':'   '})).status_code == 422
     assert (await client.get('/api/settings/llm')).json()['model'] == 'second'
+
+
+# ==========================================================================
+# Choix facilité du modèle : catalogues suggérés par provider
+# ==========================================================================
+
+
+async def test_provider_models_curated_lists(client):
+    """Chaque provider majeur renvoie une liste de suggestions non vide avec la
+    forme attendue (id + libellé) et une note de fraîcheur explicite."""
+    for provider, expected_first in (
+        ("openai", "gpt-4.1-mini"),
+        ("anthropic", "claude-sonnet-4-5"),
+        ("deepseek", "deepseek-chat"),
+        ("gemini", "gemini-2.5-flash"),
+    ):
+        r = await client.get(f"/api/settings/llm/models?provider={provider}")
+        assert r.status_code == 200, provider
+        body = r.json()
+        assert body["ok"] is True and body["source"] == "curated"
+        assert body["models"], f"liste vide pour {provider}"
+        assert body["models"][0]["id"] == expected_first
+        assert all("id" in m and "name" in m for m in body["models"])
+        assert "nov" in body["note"].lower() or "saisi" in body["note"].lower()
+
+
+async def test_provider_models_special_cases(client):
+    """mock = son modèle unique ; compatible = saisie libre expliquée ;
+    opencode-cli = renvoyé vers le catalogue dynamique ; inconnu → 400."""
+    r = await client.get("/api/settings/llm/models?provider=mock")
+    assert r.json()["models"] == [{"id": "mock-scripted-v1", "name": r.json()["models"][0]["name"]}]
+
+    r = await client.get("/api/settings/llm/models?provider=compatible")
+    body = r.json()
+    assert body["source"] == "none" and body["models"] == []
+    assert "base_url" in body["note"] and "saisi" in body["note"].lower()
+
+    r = await client.get("/api/settings/llm/models?provider=opencode-cli")
+    body = r.json()
+    assert body["source"] == "none" and "opencode/models" in body["note"]
+
+    r = await client.get("/api/settings/llm/models?provider=inconnu")
+    assert r.status_code == 400

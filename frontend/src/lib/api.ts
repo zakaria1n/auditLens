@@ -216,6 +216,19 @@ export function listOpencodeFreeModels() {
   )
 }
 
+export interface ProviderModel {
+  id: string
+  name: string
+}
+
+/** Modèles SUGGÉRÉS pour un provider (liste statique vérifiée) — saisie
+ * manuelle toujours possible. source: 'curated' | 'none'. */
+export function listProviderModels(provider: string) {
+  return request<{ ok: boolean; provider: string; source: string; models: ProviderModel[]; note: string }>(
+    `/api/settings/llm/models?provider=${encodeURIComponent(provider)}`,
+  )
+}
+
 export function listReports(q?: string) {
   const suffix = q ? `?q=${encodeURIComponent(q)}` : ''
   return request<{ reports: ReportListItem[] }>(`/api/reports${suffix}`)

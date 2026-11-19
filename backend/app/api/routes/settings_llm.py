@@ -152,3 +152,62 @@ async def list_opencode_free_models(api_key: str | None = None):
             "structured_output": bool(caps.get("structured_output", False)),
         })
     return {"ok": True, "models": models}
+
+
+# --- Catalogues de modèles SUGGÉRÉS par provider (Phase UI — choix facilité) ---
+# Listes statiques de modèles chat supportant les tool calls (condition docs/05),
+# vérifiées à jour en novembre 2026. Ce NE SONT PAS des listes exhaustives :
+# l'utilisateur peut toujours saisir librement un identifiant de modèle plus récent.
+CURATED_MODELS: dict[str, list[dict]] = {
+    "openai": [
+        {"id": "gpt-4.1-mini", "name": "GPT-4.1 mini — rapide, bon rapport qualité/prix"},
+        {"id": "gpt-4.1", "name": "GPT-4.1 — qualité maximale"},
+        {"id": "gpt-4.1-nano", "name": "GPT-4.1 nano — le plus économique"},
+        {"id": "gpt-4o-mini", "name": "GPT-4o mini"},
+        {"id": "gpt-4o", "name": "GPT-4o"},
+    ],
+    "anthropic": [
+        {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5 — recommandé (outils fiables)"},
+        {"id": "claude-haiku-4-5", "name": "Claude Haiku 4.5 — rapide et économique"},
+        {"id": "claude-opus-4-1", "name": "Claude Opus 4.1 — raisonnement profond"},
+        {"id": "claude-3-5-haiku-latest", "name": "Claude 3.5 Haiku"},
+    ],
+    "deepseek": [
+        {"id": "deepseek-chat", "name": "DeepSeek Chat (V3) — outil de chat principal"},
+        {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner (R) — raisonnement étendu"},
+    ],
+    "gemini": [
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash — rapide, recommandé"},
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro — qualité maximale"},
+        {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite — économique"},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash"},
+    ],
+    "mock": [{"id": "mock-scripted-v1", "name": "MockLLM scripté — tests sans clé ni réseau"}],
+}
+
+CURATED_NOTES: dict[str, str] = {
+    "openai": "Suggestions plateformes OpenAI (nov. 2026). Tout modèle récent supportant les tool calls peut être saisi manuellement.",
+    "anthropic": "Suggestions Anthropic (nov. 2026) via l'API Messages. Tout modèle récent supportant les outils peut être saisi manuellement.",
+    "deepseek": "Suggestions DeepSeek API (nov. 2026). Les identifiants réels dépendent du compte.",
+    "gemini": "Suggestions Google AI (nov. 2026) via l'API compatible OpenAI. Tout modèle récent peut être saisi.",
+    "mock": "Provider de test : aucun appel réseau.",
+    "compatible": "Endpoint compatible OpenAI générique (base_url requis) : la liste dépend du serveur — saisissez l'identifiant exact du modèle (ex. glm-5.3-flash sur Z.AI, llama3.1 sur Ollama local).",
+    "opencode": "Catalogue dynamique : la liste live des modèles gratuits est récupérée via /api/settings/llm/opencode/models.",
+    "opencode-cli": "Catalogue dynamique : la liste live des modèles gratuits est récupérée via /api/settings/llm/opencode/models (aucune clé requise).",
+}
+
+
+@router.get("/models")
+async def list_provider_models(provider: str):
+    """Modèles SUGGÉRÉS pour un provider (choix facilité dans l'UI). Source
+    « curated » = liste statique vérifiée (nov. 2026) ; « none » = saisie libre
+    avec explication. Jamais exhaustive : la saisie manuelle reste possible."""
+    if provider not in CURATED_NOTES:
+        raise HTTPException(400, f"provider inconnu : {provider}")
+    return {
+        "ok": True,
+        "provider": provider,
+        "source": "curated" if provider in CURATED_MODELS else "none",
+        "models": CURATED_MODELS.get(provider, []),
+        "note": CURATED_NOTES[provider],
+    }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getLLMConfig, listOpencodeFreeModels, selectLLMModel } from '../../lib/api'
+import { getLLMConfig, listOpencodeFreeModels, listProviderModels, selectLLMModel } from '../../lib/api'
 
 type ModelOption = { id: string; label: string }
 
@@ -26,6 +26,16 @@ export function useChatModel(route: string) {
           if (!catalogue.ok) throw new Error(catalogue.error || 'Catalogue indisponible')
           models = catalogue.models.map(item => ({ id: item.id, label: item.name }))
           if (config.model && !models.some(item => item.id === config.model)) models.unshift({ id: config.model, label: `${config.model} (actif)` })
+        } else if (['openai', 'anthropic', 'deepseek', 'gemini'].includes(config.provider)) {
+          // suggestions vérifiées (statiques) — le choix reste libre côté Réglages IA
+          const curated = await listProviderModels(config.provider)
+          if (!active) return
+          if (curated.ok && curated.models.length > 0) {
+            models = curated.models.map(item => ({ id: item.id, label: item.name }))
+            if (config.model && !models.some(item => item.id === config.model)) {
+              models.unshift({ id: config.model, label: `${config.model} (actif)` })
+            }
+          }
         }
         if (active) setOptions(models)
       } catch (err) {
