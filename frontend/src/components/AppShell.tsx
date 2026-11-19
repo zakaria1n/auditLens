@@ -81,6 +81,10 @@ export function AppShell() {
               const text = `Pilotage : ${instruction} — intègre cette consigne dans l'investigation en cours.`
               if (ws.activeId) await ws.send(text)
             }}
+            onVerifyFix={(findingId) => {
+              const text = `Vérification de remédiation : lance un audit ciblé du contrôle lié au constat ${findingId} pour vérifier si les corrections ont été effectives. Documente le résultat avec des preuves.`
+              if (ws.activeId) void ws.send(text)
+            }}
             mobileOpen={investigationOpen}
             onCloseMobile={() => setInvestigationOpen(false)}
           />}

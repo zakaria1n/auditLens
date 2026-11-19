@@ -30,10 +30,6 @@ from .database import Database
 T = TypeVar("T", bound=BaseModel)
 
 
-def _dump(model: BaseModel) -> str:
-    return model.model_dump_json()
-
-
 def _loads(data: str | None, cls: type[T], default: T | None = None) -> T | None:
     if data is None:
         return default

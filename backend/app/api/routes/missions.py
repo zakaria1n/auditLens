@@ -167,21 +167,6 @@ def _parse_plan_response(content: str | None, mission: AuditMission, provider) -
     return plan.model_dump()
 
 
-def _safe_json(content: str | None) -> dict:
-    import json
-    import re
-
-    if not content:
-        return {}
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return {}
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return {}
-
-
 @router.post("/{mission_id}/approve")
 async def approve_plan(mission_id: str, body: ApproveBody, request: Request):
     """Approbation humaine explicite (docs/04 étape 4). Sans elle, les tools approved-tests sont bloqués."""

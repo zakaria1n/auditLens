@@ -6,6 +6,7 @@ import type { AuditMission, AuditRun, Finding, RunEvent } from '../../lib/types'
 import { subscribeRunEvents } from '../../lib/sse'
 import { EvidenceDetailPanel } from '../EvidenceDetailPanel'
 import { FindingCard } from '../FindingCard'
+import { ActionPlanView } from '../../features/remediation/ActionPlanView'
 import { BeforeAfterAuditView, useRunDiff } from '../../features/differential-audit/BeforeAfterAuditView'
 import { CoverageMap, useCoverage } from '../../features/audit-coverage/CoverageMap'
 import { HypothesisComparison, useHypotheses } from '../../features/hypotheses/HypothesisComparison'
@@ -132,12 +133,14 @@ function RunSection({
   tab,
   onOpenEvidence,
   onSteer,
+  onVerifyFix,
 }: {
   runId: string
   approvedActiveTests: boolean
   tab: Tab
   onOpenEvidence: (evidenceId: string, missionId: string) => void
   onSteer?: (instruction: string) => void
+  onVerifyFix?: (findingId: string) => void
 }) {
   const [run, setRun] = useState<AuditRun | null>(null)
   const [events, setEvents] = useState<RunEvent[]>([])
@@ -422,7 +425,10 @@ function RunSection({
               </p>
             ) : (
               findings.map((f) => (
-                <FindingCard key={f.id} finding={f} showReviewActions onReviewed={() => reloadFindings()} />
+                <div key={f.id}>
+                  <FindingCard finding={f} showReviewActions onReviewed={() => reloadFindings()} />
+                  <ActionPlanView findingId={f.id} missionId={missionId} onOpenEvidence={onOpenEvidence} onVerifyFix={onVerifyFix} />
+                </div>
               ))
             )}
           </div>
@@ -434,8 +440,8 @@ function RunSection({
 
 /** Panneau Investigation (droite) : 360px en desktop large, tiroir overlay sous `xl`. */
 export function InvestigationPanel({
-  missionIds, runIds, onSteer, mobileOpen = false, onCloseMobile,
-}: PanelProps & { onSteer?: (instruction: string) => void }) {
+  missionIds, runIds, onSteer, onVerifyFix, mobileOpen = false, onCloseMobile,
+}: PanelProps & { onSteer?: (instruction: string) => void; onVerifyFix?: (findingId: string) => void }) {
   const [open, setOpen] = useState(true)
   const [missions, setMissions] = useState<AuditMission[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
@@ -542,6 +548,7 @@ export function InvestigationPanel({
                 tab={tab}
                 onOpenEvidence={(evidenceId, mid) => setDrawer({ evidenceId, missionId: mid })}
                 onSteer={onSteer}
+                onVerifyFix={onVerifyFix}
               />
             </div>
           )}
