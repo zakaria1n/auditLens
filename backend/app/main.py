@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +19,32 @@ from .evidence.store import EvidenceStore
 from .harness.executor import ToolExecutor
 from .harness.policy import PolicyGate
 from .harness.registry import ToolRegistry
+from .models import utcnow
 from .persistence.database import Database
 from .persistence.repository import Repository
 from .tools import register_all_tools
+
+
+def _resolve_build_commit(repo_root: Path) -> str | None:
+    """Commit git lu dans le checkout au démarrage (diagnostic anti-serveur-stale).
+    None si indisponible (hors repo git, archives) — jamais fabriqué."""
+    try:
+        head = (repo_root / ".git" / "HEAD").read_text().strip()
+        if head.startswith("ref:"):
+            ref = head[5:]
+            ref_file = repo_root / ".git" / ref
+            if ref_file.exists():
+                return ref_file.read_text().strip()[:12]
+            packed = repo_root / ".git" / "packed-refs"
+            if packed.exists():
+                for line in packed.read_text().splitlines():
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == ref:
+                        return parts[0][:12]
+            return None
+        return head[:12] if len(head) >= 8 else None
+    except OSError:
+        return None
 
 
 @asynccontextmanager
@@ -43,6 +68,9 @@ async def lifespan(app: FastAPI):
     orchestrator = RunOrchestrator(repo, store, connectors, executor, bus, input_models, controls=run_controls)
 
     app.state.settings = settings
+    app.state.build_commit = _resolve_build_commit(Path(__file__).resolve().parents[2])
+    app.state.started_at = utcnow()
+    app.state.environment = os.environ.get("AUDITLENS_ENV", "development")
     app.state.db = db
     app.state.repo = repo
     app.state.store = store
@@ -92,4 +120,14 @@ app.include_router(reports.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "auditlens-backend", "version": "0.1.0"}
+    """Santé + identité de build (diagnostic dev) : détecter un serveur stale
+    (code ancien servi après modifications) sans infrastructure supplémentaire."""
+    return {
+        "status": "ok",
+        "service": "auditlens-backend",
+        "version": app.version,
+        "git_commit": getattr(app.state, "build_commit", None),
+        "started_at": getattr(app.state, "started_at", None),
+        "environment": getattr(app.state, "environment", "unknown"),
+        "pid": os.getpid(),
+    }
