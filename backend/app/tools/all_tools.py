@@ -146,6 +146,43 @@ def _records_from_payload(full: dict) -> list[dict]:
     return payload.get("records") or []
 
 
+async def _evidence_records(
+    ctx: ToolContext, ev, full: dict, file_limit: int,
+) -> tuple[list[dict], str | None, bool]:
+    """Enregistrements exploitables d'une evidence : section payload 'records' (déjà
+    bornée à la collecte), sinon fallback fichier brut CSV/XLSX/JSON via le connecteur
+    — même normalisation que data_explore, aucune duplication du parsing JSON.
+    Retourne (records, load_error, file_truncated) ; load_error décrit un fichier brut
+    illisible (malformé, supprimé, format non supporté) ; file_truncated signale une
+    entrée bornée au chargement (les enregistrements au-delà de file_limit sont ignorés)."""
+    payload = full.get("payload") or {}
+    records = payload.get("records") or []
+    if records:
+        return records, None, False
+    if ev.type == "raw_file" and payload.get("path"):
+        fc = FileConnector({"path": payload.get("path"), "original_name": ev.title})
+        try:
+            loaded = await fc.load_records(limit=file_limit)
+        except Exception as exc:  # noqa: BLE001 — fichier brut illisible : erreur explicite
+            return [], f"fichier source illisible ({type(exc).__name__}: {exc})", False
+        return loaded, None, len(loaded) >= file_limit
+    return [], None, False
+
+
+def _field_value(row: dict, dotted: str):
+    """Valeur d'un champ : clé plate (chemins pointés des enregistrements JSON aplatis)
+    ou traversée d'un objet imbriqué. None si absent — jamais de substitution inventée."""
+    if dotted in row:
+        return row[dotted]
+    current: Any = row
+    for part in dotted.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None
+    return current
+
+
 # ==========================================================================
 # Handlers
 # ==========================================================================
@@ -778,14 +815,12 @@ async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
     from ..audit.exploration import MAX_EXPLORE_ROWS, apply_exploration
 
     ev, full = await _load_evidence(ctx, args["evidence_id"])
-    records = _records_from_payload(full)
-    if not records and ev.type == "raw_file" and (full.get("payload") or {}).get("path"):
-        # fichier source (CSV/XLSX/JSON) : enregistrements normalisés via le connecteur
-        from ..connectors.files.connector import FileConnector
-
-        fc = FileConnector({"path": (full.get("payload") or {}).get("path"),
-                            "original_name": ev.title})
-        records = await fc.load_records(limit=MAX_EXPLORE_ROWS)
+    records, load_error, _truncated = await _evidence_records(ctx, ev, full, file_limit=MAX_EXPLORE_ROWS)
+    if load_error:
+        return ToolResult(
+            tool_call_id="", tool="data_explore", source_id=ev.source_id,
+            status="error", error=load_error,
+        )
     if not records:
         return ToolResult(
             tool_call_id="", tool="data_explore", source_id=ev.source_id,
@@ -885,38 +920,82 @@ async def tool_evidence_search(ctx: ToolContext, args: dict) -> ToolResult:
 
     L'agent investigateur localise un enregistrement précis cité par une réconciliation
     (ex. une commande flaggée) sans parcourir la preuve page par page : identifiant métier,
-    sous-chaîne sur un champ. Chaque hit est redacté et traçable (evidence de type excerpt).
-    """
+    sous-chaîne sur un champ (chemin pointé supporté pour le JSON aplati), valeur numérique
+    (recherche textuelle sur la représentation). Les evidences `raw_file` (CSV/XLSX/JSON/
+    JSONL) sont parcourues via le connecteur — même normalisation que data_explore.
+    Chaque hit est redacté et traçable (evidence de type excerpt, index d'enregistrement).
+    Les cas « aucun enregistrement consultable », « fichier illisible » et « aucune
+    correspondance » sont distingués explicitement — jamais de succès trompeur."""
     ev, full = await _load_evidence(ctx, args["evidence_id"])
     payload = full.get("payload") or {}
     query = str(args["query"]).lower()
     field_filter = args.get("field")
     max_hits = args.get("max_hits", 10)
+
+    records, load_error, file_truncated = await _evidence_records(
+        ctx, ev, full, file_limit=MAX_SEARCH_SCAN,
+    )
+
+    # Sources de lignes : enregistrements normalisés sinon sections nommées des
+    # preuves structurées historiques (odoo: pickings/quants, api: lines).
+    sources: list[tuple[str, list]] = []
+    if records:
+        sources.append(("records", records))
+    seen = {"records"} if records else set()
+    for section in ("records", "lines", "pickings", "quants"):
+        if section in seen:
+            continue
+        rows = payload.get(section)
+        if isinstance(rows, list) and rows:
+            sources.append((section, rows))
+
     hits: list[dict] = []
     scanned = 0
     truncated_scan = False
-    for section in ("records", "lines", "pickings", "quants"):
-        rows = payload.get(section)
-        if not isinstance(rows, list):
-            continue
+    for section, rows in sources:
         for idx, row in enumerate(rows):
-            scanned += 1
-            if scanned > MAX_SEARCH_SCAN:
+            if scanned >= MAX_SEARCH_SCAN:
                 truncated_scan = True
                 break
-            if not isinstance(row, dict) or len(hits) >= max_hits:
-                if len(hits) >= max_hits:
-                    break
+            if len(hits) >= max_hits:
+                break
+            scanned += 1
+            if not isinstance(row, dict):
                 continue
             if field_filter:
-                value = row.get(field_filter)
+                value = _field_value(row, field_filter)
                 matched = value is not None and query in str(value).lower()
             else:
                 matched = query in json.dumps(row, ensure_ascii=False, default=str).lower()
             if matched:
                 hits.append({"section": section, "index": idx, "record": redact(row)})
-        if len(hits) >= max_hits or truncated_scan:
+        if truncated_scan or len(hits) >= max_hits:
             break
+
+    if load_error:
+        return ToolResult(
+            tool_call_id="", tool="evidence_search", source_id=ev.source_id,
+            status="error", error=load_error,
+            preview={"query": args["query"], "field": field_filter,
+                     "rows_scanned": 0, "hit_count": 0},
+        )
+    if scanned == 0:
+        return ToolResult(
+            tool_call_id="", tool="evidence_search", source_id=ev.source_id,
+            status="insufficient_evidence",
+            error=(f"aucun enregistrement consultable dans l'evidence {ev.id} "
+                   f"(type={ev.type}) — rien à rechercher"),
+            preview={"query": args["query"], "field": field_filter,
+                     "rows_scanned": 0, "hit_count": 0},
+        )
+
+    records_source = "raw_file" if not (payload.get("records") or []) else "payload"
+    warnings = []
+    if truncated_scan:
+        warnings.append("scan interrompu à la limite bornée — affiner la requête")
+    if file_truncated:
+        warnings.append(f"fichier brut borné à {MAX_SEARCH_SCAN} enregistrements au chargement — "
+                        "résultats partiels possibles")
 
     evidence_id = new_id("evidence")
     new_ev = ctx.store.save(
@@ -925,11 +1004,13 @@ async def tool_evidence_search(ctx: ToolContext, args: dict) -> ToolResult:
         payload={
             "source_evidence_id": ev.id, "query": args["query"], "field": field_filter,
             "hits": hits, "rows_scanned": scanned, "scan_truncated": truncated_scan,
+            "file_truncated": file_truncated, "records_source": records_source,
         },
         provenance={"tool": "evidence_search", "source_evidence": ev.id},
         record_count=len(hits),
         summary={"source_evidence_id": ev.id, "query": args["query"], "field": field_filter,
-                 "hit_count": len(hits), "rows_scanned": scanned, "scan_truncated": truncated_scan},
+                 "hit_count": len(hits), "rows_scanned": scanned,
+                 "scan_truncated": truncated_scan, "records_source": records_source},
         evidence_id=evidence_id,
     )
     await ctx.repo.create_evidence_meta(new_ev)
@@ -937,8 +1018,12 @@ async def tool_evidence_search(ctx: ToolContext, args: dict) -> ToolResult:
         tool_call_id="", tool="evidence_search", status="success",
         source_id=ev.source_id, evidence_ids=[new_ev.id], record_count=len(hits),
         preview={"query": args["query"], "hit_count": len(hits), "hits": hits,
-                 "rows_scanned": scanned, "scan_truncated": truncated_scan},
-        warnings=(["scan interrompu à la limite bornée — affiner la requête"] if truncated_scan else []),
+                 "rows_scanned": scanned, "scan_truncated": truncated_scan,
+                 "file_truncated": file_truncated, "records_source": records_source,
+                 "note": (f"{len(hits)} correspondance(s) sur {scanned} enregistrement(s) consulté(s)"
+                          if hits else
+                          f"aucune correspondance sur {scanned} enregistrement(s) consulté(s)")},
+        warnings=warnings,
     )
 
 
@@ -1048,7 +1133,7 @@ TOOL_DEFS: list[dict] = [
           [], PermissionLevel.local, CorrelateRecordsInput,
           {"type": "object", "properties": {"evidence_ids": {"type": "array", "items": {"type": "string"}}, "left_key": {"type": "string"}, "right_key": {"type": "string"}, "compare_fields": {"type": "array", "items": {"type": "object", "properties": {"left": {"type": "string"}, "right": {"type": "string"}}}}, "normalize": {"type": "boolean"}, "label": {"type": "string"}}, "required": ["evidence_ids", "left_key", "right_key"]}),
     _spec("evidence_search", "Rechercher dans une preuve",
-          "Recherche bornée (insensible à la casse) dans une preuve collectée : localise un enregistrement par identifiant métier ou sous-chaîne (records/lines/pickings/quants), champ optionnel. Hit redactés et traçables.",
+          "Recherche bornée (insensible à la casse) dans une preuve collectée, y compris les evidences raw_file (CSV/XLSX/JSON/JSONL normalisés) : localise un enregistrement par identifiant métier ou sous-chaîne, champ optionnel (chemin pointé supporté, ex. client.nom). Hit redactés, traçables (index d'enregistrement) ; aucune correspondance / rien de consultable distingués explicitement.",
           [], PermissionLevel.read, EvidenceSearchInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "query": {"type": "string"}, "field": {"type": "string"}, "max_hits": {"type": "integer"}}, "required": ["evidence_id", "query"]}),
 ]
@@ -1076,7 +1161,7 @@ def register_all_tools(registry) -> dict[str, type[BaseModel]]:
         "correlate_records": tool_correlate_records,
         "get_control_definition": tool_get_control_definition,
         "get_evidence_excerpt": tool_get_evidence_excerpt,
-                "evidence_search": tool_evidence_search,
+        "evidence_search": tool_evidence_search,
         "odoo_list_models": tool_odoo_list_models,
         "odoo_describe_model": tool_odoo_describe_model,
         "odoo_query_records": tool_odoo_query_records,

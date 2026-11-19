@@ -14,7 +14,7 @@ from ...models import Evidence, SourceConnection, SourceStatus, SourceType, utcn
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
-ALLOWED_EXTENSIONS = (".csv", ".xlsx", ".json")
+ALLOWED_EXTENSIONS = (".csv", ".xlsx", ".json", ".jsonl")  # .jsonl : JSON Lines supporté par le parser
 MAX_UPLOAD_MB = 25
 
 
