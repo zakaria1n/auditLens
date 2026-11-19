@@ -5,6 +5,8 @@ import { useChatModel } from '../../features/chat/useChatModel'
 import { searchThread } from '../../lib/chatApi'
 import { useChatWorkspaceCtx } from '../../lib/chatWorkspaceContext'
 import { WelcomeScreen } from '../../features/chat/components/WelcomeScreen'
+import { buildSelectionMessage, type VizSelection } from '../../features/intelligent-ui/interactions/selection'
+import { SelectionChip } from '../../features/intelligent-ui/interactions/SelectionChip'
 import { ChatMessages } from './ChatMessages'
 import { ChatComposer } from '../../features/chat/ChatComposer'
 
@@ -32,6 +34,37 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
+  const [selection, setSelection] = useState<VizSelection | null>(null)
+
+  const sendWithSelection = async (text: string, withSelection: VizSelection | null) => {
+    const final = withSelection ? buildSelectionMessage(withSelection, text) : text
+    setSelection(null)
+    if (ws.activeId) await ws.send(final)
+    else {
+      const title = final.split('\n')[0].slice(0, 80)
+      const thread = await ws.newThread(title)
+      await ws.send(final, thread.id)
+    }
+  }
+
+  // investigation immédiate d'une sélection (villes filtres locaux restent sans LLM)
+  const investigateSelection = (sel: VizSelection) => {
+    void sendWithSelection('', sel).catch(() => ws.notice)
+  }
+
+  // anciennes tables d'exploration (data_explore) : même handoff structuré
+  const investigateLegacyRecord = (record: Record<string, unknown>) => {
+    investigateSelection({ vizType: 'data_table', vizTitle: 'Exploration de données', record })
+  }
+
+  const vizCallbacks = {
+    onSelect: (sel: VizSelection) => setSelection(sel),
+    onInvestigateSelection: (sel: VizSelection) => investigateSelection(sel),
+    onOpenEvidence: (evidenceId: string) => {
+      const runId = ws.thread?.run_ids?.[ws.thread.run_ids.length - 1]
+      navigate(runId ? '/evidence?run_id=' + runId + '&focus=' + evidenceId : '/evidence')
+    },
+  }
 
   const doSearch = async () => {
     if (!ws.activeId || !searchQuery.trim()) return
@@ -124,6 +157,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
           </div>
         ) : !ws.loading && ws.messages.length === 0 ? (
           <div className="hide-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-10">
+            {selection && <div className="w-full"><SelectionChip selection={selection} onClear={() => setSelection(null)} onInvestigate={() => investigateSelection(selection)} /></div>}
             <WelcomeScreen
               composer={
                 <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={async text => { if (ws.activeId) await ws.send(text); else { const title = text.split('\n')[0].slice(0, 80); const thread = await ws.newThread(title); await ws.send(text, thread.id) } }} onCancel={() => void ws.cancel()} />
@@ -132,9 +166,12 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
             />
           </div>
         ) : (
-          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={evidenceId => { const runId = ws.thread?.run_ids?.[ws.thread.run_ids.length - 1]; navigate(runId ? `/evidence?run_id=${runId}&focus=${evidenceId}` : '/evidence') }}
-onInvestigate={record => { const ids = Object.entries(record).filter(([k]) => k.endsWith("_id") || k === "id").map(([k, v]) => k + "=" + String(v)); const label = ids.length > 0 ? ids.join(', ') : JSON.stringify(record).slice(0, 200); const text = "Investigue cet enregistrement (" + label + ") : verifie sa coherence, confronte-le aux autres preuves collectees et documente toute anomalie avec les preuves correspondantes."; if (ws.activeId) { void ws.send(text) } else { void (async () => { const t = await ws.newThread(text.slice(0, 80)); await ws.send(text, t.id) })() } }} />}</div></div>
-          <footer className="bg-white px-4 pb-4 pt-2"><div className="mx-auto max-w-[760px]"><ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={ws.send} onCancel={() => void ws.cancel()} /></div></footer></>
+          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={vizCallbacks.onOpenEvidence}
+onInvestigate={investigateLegacyRecord} />}</div></div>
+          <footer className="bg-white px-4 pb-4 pt-2"><div className="mx-auto max-w-[760px]">
+            {selection && <SelectionChip selection={selection} onClear={() => setSelection(null)} onInvestigate={() => investigateSelection(selection)} />}
+            <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={text => sendWithSelection(text, selection)} onCancel={() => void ws.cancel()} />
+          </div></footer></>
         )}
       </section>
     </>

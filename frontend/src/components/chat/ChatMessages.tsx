@@ -12,6 +12,7 @@ import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIn
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
 import type { VizCallbacks } from '../../features/intelligent-ui/renderers'
+import type { VizSelection } from '../../features/intelligent-ui/interactions/selection'
 
 interface MessagesProps {
   messages: ChatMsg[]
@@ -31,8 +32,9 @@ const vizCallbacksFor = (
   onOpenEvidence?: (id: string) => void,
 ): VizCallbacks => ({
   onOpenEvidence,
-  onInvestigateRecord: (record) => onInvestigate?.(record),
-  onInvestigateLabel: (label) => onInvestigate?.({ _label: label }),
+  onSelect: (selection: VizSelection) => {
+    if (selection.record !== undefined) onInvestigate?.(selection.record)
+  },
 })
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {

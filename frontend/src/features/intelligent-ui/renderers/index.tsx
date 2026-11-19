@@ -6,12 +6,15 @@ import type {
   ProcessDiagramSpec, RelationshipGraphSpec, TimelineSpec, VizSpec,
 } from '../schemas/viz'
 import { specToText } from '../schemas/viz'
+import type { VizSelection } from '../interactions/selection'
 
 /** Interactions fournies par le chat (Phase 4 : handoff structuré vers l'agent). */
 export interface VizCallbacks {
   onOpenEvidence?: (evidenceId: string) => void
-  onInvestigateRecord?: (record: Record<string, unknown>, rowId?: string, sourceTitle?: string) => void
-  onInvestigateLabel?: (label: string, sourceTitle?: string) => void
+  /** sélectionne l'élément : contexte joint au PROCHAIN message (chip compositeur) */
+  onSelect?: (selection: VizSelection) => void
+  /** investigation immédiate : le message part avec le contexte structuré */
+  onInvestigateSelection?: (selection: VizSelection) => void
 }
 
 function EvidenceChips({ refs, onOpenEvidence }: { refs?: string[]; onOpenEvidence?: (id: string) => void }) {
@@ -65,8 +68,24 @@ function fmt(n: number, unit?: string): string {
 
 export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbacks?: VizCallbacks }) {
   const [selected, setSelected] = useState<number | null>(null)
+  const [filter, setFilter] = useState('')
+  const needle = filter.trim().toLowerCase()
+  const visibleRows = needle
+    ? spec.rows
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) =>
+          Object.values(row).some((v) => v !== null && String(v).toLowerCase().includes(needle)),
+        )
+    : spec.rows.map((row, index) => ({ row, index }))
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
+      <input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filtrer localement (aucune requête LLM)…"
+        aria-label="Filtrer les lignes du tableau"
+        className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-ink-700 placeholder:text-ink-300 focus:border-brand-300 focus:outline-none"
+      />
       <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
         <table className="w-full border-collapse text-left text-xs">
           <thead className="sticky top-0 bg-surface-2">
@@ -82,10 +101,17 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
             </tr>
           </thead>
           <tbody>
-            {spec.rows.map((row, i) => (
+            {visibleRows.map(({ row, index: i }) => (
               <tr
                 key={i}
-                className={selected === i ? 'bg-brand-50/70' : 'hover:bg-surface-1'}
+                onClick={() => {
+                  setSelected(selected === i ? null : i)
+                  callbacks?.onSelect?.({
+                    vizType: 'data_table', vizTitle: spec.title,
+                    record: row, recordId: spec.row_ids?.[i],
+                  })
+                }}
+                className={'cursor-pointer ' + (selected === i ? 'bg-brand-50/70' : 'hover:bg-surface-1')}
                 aria-selected={selected === i}
               >
                 {spec.columns.map((c) => (
@@ -121,10 +147,15 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
               </div>
             ))}
           </dl>
-          {callbacks?.onInvestigateRecord && (
+          {callbacks?.onInvestigateSelection && (
             <button
               type="button"
-              onClick={() => callbacks.onInvestigateRecord?.(spec.rows[selected], spec.row_ids?.[selected], spec.title)}
+              onClick={() =>
+                callbacks.onInvestigateSelection?.({
+                  vizType: 'data_table', vizTitle: spec.title,
+                  record: spec.rows[selected], recordId: spec.row_ids?.[selected],
+                })
+              }
               className="mt-2 rounded-lg bg-brand-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-brand-700"
             >
               Investiguer cet enregistrement
@@ -152,7 +183,9 @@ export function BarChartViz({ spec, callbacks }: { spec: BarChartSpec; callbacks
               <button
                 type="button"
                 aria-label={`${bar.label} : ${fmt(bar.value, spec.unit)}. Investiguer`}
-                onClick={() => callbacks?.onInvestigateLabel?.(bar.label, spec.title)}
+                onClick={() =>
+                  callbacks?.onSelect?.({ vizType: 'bar_chart', vizTitle: spec.title, label: bar.label })
+                }
                 className="absolute inset-y-0 left-0 rounded-md bg-brand-500/90 transition-colors hover:bg-brand-600"
                 style={{ width: `${Math.max((Math.abs(bar.value) / max) * 100, 2)}%` }}
               />
@@ -239,7 +272,9 @@ export function ComparisonViz({ spec, callbacks }: { spec: ComparisonSpec; callb
           <li key={item.label}>
             <button
               type="button"
-              onClick={() => callbacks?.onInvestigateLabel?.(item.label, spec.title)}
+              onClick={() =>
+                callbacks?.onSelect?.({ vizType: 'comparison', vizTitle: spec.title, label: item.label })
+              }
               className="group grid w-full grid-cols-[130px_1fr] items-center gap-2 rounded-lg text-left hover:bg-surface-1"
               title={`Comparer ${item.label}`}
             >
@@ -300,7 +335,17 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
           const style = EDGE_STYLES[edge.status ?? 'ok']
           return (
             <g key={i}>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={style.stroke} strokeWidth="1.6" strokeDasharray={style.dash}>
+              <line
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke={style.stroke} strokeWidth="1.6" strokeDasharray={style.dash}
+                className="cursor-pointer"
+                onClick={() =>
+                  callbacks?.onSelect?.({
+                    vizType: 'relationship_graph', vizTitle: spec.title,
+                    edge: { source: edge.source, target: edge.target, status: edge.status, label: edge.label },
+                  })
+                }
+              >
                 <title>{`${edge.source} → ${edge.target}${edge.label ? ` · ${edge.label}` : ''}${edge.status && edge.status !== 'ok' ? ` (${edge.status})` : ''}`}</title>
               </line>
               {edge.label && (
@@ -315,7 +360,13 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
           const pos = positions.get(node.id)
           if (!pos) return null
           return (
-            <g key={node.id}>
+            <g
+              key={node.id}
+              className="cursor-pointer"
+              onClick={() =>
+                callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label })
+              }
+            >
               <circle cx={pos.x} cy={pos.y} r="17" fill="#f4f3ff" stroke="#5046c9" strokeWidth="1.4" />
               <text x={pos.x} y={pos.y + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#2c3449">
                 {node.label.length > 9 ? `${node.label.slice(0, 8)}…` : node.label}

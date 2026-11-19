@@ -30,20 +30,20 @@ describe('VizBlock — rendu sûr', () => {
   })
 
   it('table interactive : détail + investigation avec la ligne sélectionnée', async () => {
-    const onInvestigateRecord = vi.fn()
+    const onInvestigate = vi.fn()
     render(
       <VizBlock
         raw={{
           version: 1, type: 'data_table', title: 'Écarts',
           columns: ['ref', 'qty'], rows: [{ ref: 'SO-2', qty: -3 }], row_ids: ['42'],
         }}
-        callbacks={{ onInvestigateRecord }}
+        callbacks={{ onInvestigateSelection: onInvestigate }}
       />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Détail' }))
     expect(screen.getByText('Enregistrement 42')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Investiguer cet enregistrement/i }))
-    expect(onInvestigateRecord).toHaveBeenCalledExactlyOnceWith({ ref: 'SO-2', qty: -3 }, '42', 'Écarts')
+    expect(onInvestigate).toHaveBeenCalledExactlyOnceWith({ vizType: 'data_table', vizTitle: 'Écarts', record: { ref: 'SO-2', qty: -3 }, recordId: '42' })
   })
 
   it('les chips de preuve déclenchent onOpenEvidence', async () => {
