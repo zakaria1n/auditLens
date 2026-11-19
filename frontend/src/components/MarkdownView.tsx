@@ -100,10 +100,12 @@ export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
           : level === 2
             ? 'text-base font-semibold text-slate-900 mt-4'
             : 'text-sm font-semibold text-slate-800 mt-3'
+      // vraies balises h1..h6 : la structure de titres reste lisible par les lecteurs d'écran
+      const Tag = (`h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6')
       blocks.push(
-        <p key={`b${key++}`} className={cls}>
+        <Tag key={`b${key++}`} className={cls}>
           {renderInline(heading[2], `h${key}`)}
-        </p>,
+        </Tag>,
       )
       i += 1
       continue

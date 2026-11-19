@@ -1,4 +1,4 @@
-import { Component } from 'react'
+import { Component, memo } from 'react'
 import type { ReactNode } from 'react'
 
 import { validateVizSpec, type VizSpec } from './schemas/viz'
@@ -60,7 +60,7 @@ class VizErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
  * le registre. Invalide → repli lisible avec la raison (jamais un échec silencieux,
  * jamais d'exécution de contenu non approuvé).
  */
-export function VizBlock({ raw, callbacks }: { raw: unknown; callbacks?: VizCallbacks }) {
+function VizBlockInner({ raw, callbacks }: { raw: unknown; callbacks?: VizCallbacks }) {
   const result = validateVizSpec(raw)
   if (!result.ok) {
     return (
@@ -82,3 +82,9 @@ export function VizBlock({ raw, callbacks }: { raw: unknown; callbacks?: VizCall
     </VizErrorBoundary>
   )
 }
+
+/**
+ * Mémoïsé : pendant le streaming, les messages re-rendent souvent — la
+ * validation (déterministe) et le rendu ne refont que si la spéc change.
+ */
+export const VizBlock = memo(VizBlockInner)
