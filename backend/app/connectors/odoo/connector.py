@@ -257,7 +257,8 @@ class OdooConnector:
         if order:
             kwargs["order"] = str(order)[:120]
         rows = await self._call(model, "search_read", [domain], {"fields": read_fields, **kwargs})
-        return {"allowed": True, "model": model, "count": len(rows), "records": rows}
+        return {"allowed": True, "model": model, "count": len(rows),
+                "records": [redact(r) for r in rows]}
 
     async def follow_relation(self, model: str, record_id: int, relation_field: str,
                               limit: int = 50) -> dict[str, Any]:
@@ -282,6 +283,10 @@ class OdooConnector:
         comodel = str(meta.get("relation") or "")
         if not model_is_allowed(comodel):
             return {"allowed": True, "error": f"comodèle interdit : {comodel}"}
+        # champs du comodèle : même sanitisation que query_records (binaires/sensibles
+        # exclus — sans elle Odoo renvoie TOUS les champs, images base64 comprises)
+        comodel_fields = await self._call(comodel, "fields_get", [], {"attributes": ["type"]})
+        safe_fields = sorted(sanitize_fields(comodel_fields).keys())[:60]
         rec = await self._call(model, "read", [[int(record_id)]], {"fields": [relation_field]})
         if not rec:
             return {"allowed": True, "error": f"enregistrement {record_id} introuvable dans {model}"}
@@ -291,15 +296,16 @@ class OdooConnector:
             target_id = target[0] if isinstance(target, list) else target
             if not target_id:
                 return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": []}
-            rows = await self._call(comodel, "read", [[int(target_id)]])
-            return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": rows}
+            rows = await self._call(comodel, "read", [[int(target_id)]], {"fields": safe_fields})
+            return {"allowed": True, "relation_type": ftype, "comodel": comodel,
+                    "records": [redact(r) for r in rows]}
         linked_ids = rec[0].get(relation_field) or []
         ids = [int(i) for i in linked_ids][:limit]
         if not ids:
             return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": []}
-        rows = await self._call(comodel, "read", [ids[:limit]])
-        return {"allowed": True, "relation_type": ftype, "comodel": comodel, "records": rows,
-                "total_linked": len(linked_ids)}
+        rows = await self._call(comodel, "read", [ids[:limit]], {"fields": safe_fields})
+        return {"allowed": True, "relation_type": ftype, "comodel": comodel,
+                "records": [redact(r) for r in rows], "total_linked": len(linked_ids)}
 
     async def aggregate_records(self, model: str, group_by: str, domain: list,
                                 aggregate_field: str | None = None,

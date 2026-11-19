@@ -106,8 +106,11 @@ class FakeStore:
         self.saved = []
 
     def save(self, **kwargs):
+        # strict comme le vrai store : evidence_id obligatoire (régression live 3A)
+        if not kwargs.get("evidence_id"):
+            raise TypeError("store.save requiert evidence_id (contrat réel)")
         self.saved.append(kwargs)
-        return type("Ev", (), {"id": "ev_new", **{k: v for k, v in kwargs.items() if k != "evidence_id"}})()
+        return type("Ev", (), {"id": kwargs["evidence_id"], **{k: v for k, v in kwargs.items() if k != "evidence_id"}})()
 
 
 class FakeRepo:
@@ -171,6 +174,10 @@ def test_query_records_bounded_and_evidence_created():
     assert result.status == "success" and result.record_count == 3
     assert result.evidence_ids, "une evidence record_set doit être créée"
     assert ctx.store.saved[0]["type_"] == "record_set"
+    # aperçu borné pour le LLM (régression live 3A : succès sans preview = observation vide)
+    assert result.preview["record_count"] == 3
+    assert result.preview["sample"] and "name" in result.preview["sample"][0]
+    assert "get_evidence_excerpt" in result.preview["sample_note"]
 
 
 def test_domain_operator_allowlist():
@@ -187,10 +194,12 @@ def test_follow_relation_many2one_and_one2many():
                                    record_id=5, relation_field="partner_id")
     result = asyncio.run(tool_odoo_follow_relation(ctx, args))
     assert result.status == "success" and result.record_count == 1
+    assert result.preview["comodel"] == "res.partner" and result.preview["sample"]
     args2 = OdooFollowRelationInput(source_id="src_odoo", model="sale.order",
                                     record_id=5, relation_field="line_ids")
     result2 = asyncio.run(tool_odoo_follow_relation(ctx, args2))
     assert result2.record_count == 2
+    assert result2.preview["total_linked"] == 2
 
 
 def test_aggregate_success():
@@ -200,3 +209,67 @@ def test_aggregate_success():
                               aggregate_op="sum")
     result = asyncio.run(tool_odoo_aggregate_records(ctx, args))
     assert result.status == "success"
+
+
+# ==========================================================================
+# Phase 3A — régression live : follow_relation doit lire le comodèle avec des
+# champs sanitisés (sinon Odoo renvoie TOUS les champs, images base64 comprises)
+# ==========================================================================
+
+from app.connectors.odoo.connector import OdooConnector  # noqa: E402
+
+
+class _StubbedOdooConnector(OdooConnector):
+    """Transport XML-RPC remplacé par des réponses scriptées."""
+
+    def __init__(self):
+        super().__init__({"url": "http://stub", "db": "d", "username": "u"}, {})
+        self.uid = 1
+        self.calls: list[tuple] = []
+
+    async def _call(self, model, method, args, kwargs=None):
+        self.calls.append((model, method, kwargs or {}))
+        if (model, method) == ("sale.order", "fields_get"):
+            return {"partner_id": {"type": "many2one", "relation": "res.partner"},
+                    "name": {"type": "char"}}
+        if (model, method) == ("sale.order", "read"):
+            return [{"id": 2, "partner_id": [7, "Client A"]}]
+        if (model, method) == ("res.partner", "fields_get"):
+            return {"name": {"type": "char"}, "image_1920": {"type": "binary"},
+                    "payment_token_ids": {"type": "one2many", "relation": "payment.token"}}
+        if (model, method) == ("res.partner", "read"):
+            # fidèle à Odoo : seuls les champs demandés sont renvoyés
+            base = {"id": 7, "name": "Client A", "image_1920": "base64…",
+                    "api_key": "SK-LIVE-SECRET"}
+            return [{f: base.get(f) for f in kwargs.get("fields") or sorted(base)}]
+        raise AssertionError(f"appel inattendu: {model}.{method}")
+
+
+def test_follow_relation_sanitizes_comodel_fields_and_redacts():
+    conn = _StubbedOdooConnector()
+    out = asyncio.run(conn.follow_relation("sale.order", 2, "partner_id"))
+    assert out["allowed"] is True and out["comodel"] == "res.partner"
+    row = out["records"][0]
+    assert row["name"] == "Client A"
+    assert "image_1920" not in row, "champ binaire exclu du read du comodèle"
+    read_kwargs = [kw for m, meth, kw in conn.calls if (m, meth) == ("res.partner", "read")][0]
+    assert read_kwargs["fields"] == ["name"], "lecture comodèle restreinte aux champs sûrs"
+
+
+def test_query_records_redacts_sensitive_values_defense_in_depth():
+    """Un champ 'api_key' (variante à underscore) échappe à sanitize_fields mais la
+    valeur est redactée par le connecteur — même défense que le read spécialisé."""
+    conn = _StubbedOdooConnector()
+
+    async def extra(model, method, args, kwargs=None):
+        if (model, method) == ("res.partner", "fields_get") and kwargs.get("attributes") == ["type"]:
+            return {"name": {"type": "char"}, "api_key": {"type": "char"}}  # non exclu par sanitize_fields
+        if (model, method) == ("res.partner", "search_read"):
+            return [{"name": "Client A", "api_key": "SK-LIVE-SECRET"}]
+        return await _StubbedOdooConnector._call(conn, model, method, args, kwargs)
+
+    conn._call = extra  # type: ignore[method-assign]
+    out = asyncio.run(conn.query_records("res.partner", [], None, limit=5))
+    assert out["allowed"] is True
+    assert out["records"][0]["name"] == "Client A"
+    assert out["records"][0]["api_key"] == "[REDACTED]"

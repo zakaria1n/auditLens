@@ -17,6 +17,8 @@ from app.connectors.odoo.generic import (
 )
 from pydantic import BaseModel, Field
 
+from ..core.ids import new_id
+from ..core.redact import redact
 from ..harness.contracts import InputValidationError, ToolResult, validate_tool_args
 
 
@@ -144,10 +146,19 @@ async def tool_odoo_query_records(ctx, args) -> ToolResult:
         provenance={"tool": "odoo_query_records", "domain": args.get("domain", [])},
         record_count=out["count"],
         summary={"model": args["model"], "records": out["count"]},
+        evidence_id=new_id("evidence"),
     )
     await ctx.repo.create_evidence_meta(new_ev)
+    sample = out["records"][:5]
     return ToolResult(tool_call_id="", tool="odoo_query_records", source_id=source.id,
-                      status="success", evidence_ids=[new_ev.id], record_count=out["count"])
+                      status="success", evidence_ids=[new_ev.id], record_count=out["count"],
+                      preview={
+                          "model": args["model"], "record_count": out["count"],
+                          "fields": sorted({k for r in out["records"] for k in r})[:40],
+                          "sample": redact(sample),
+                          "sample_note": (f"premiers {len(sample)} enregistrements sur "
+                                          f"{out['count']} — get_evidence_excerpt pour plus de détails"),
+                      })
 
 
 async def tool_odoo_follow_relation(ctx, args) -> ToolResult:
@@ -178,10 +189,18 @@ async def tool_odoo_follow_relation(ctx, args) -> ToolResult:
         record_count=len(records),
         summary={"records": len(records), "comodel": out.get("comodel"),
                  "relation_type": out.get("relation_type")},
+        evidence_id=new_id("evidence"),
     )
     await ctx.repo.create_evidence_meta(new_ev)
+    sample = records[:5]
     return ToolResult(tool_call_id="", tool="odoo_follow_relation", source_id=source.id,
-                      status="success", evidence_ids=[new_ev.id], record_count=len(records))
+                      status="success", evidence_ids=[new_ev.id], record_count=len(records),
+                      preview={
+                          "via": f"{args['model']}.{args['relation_field']}#{args['record_id']}",
+                          "relation_type": out.get("relation_type"), "comodel": out.get("comodel"),
+                          "record_count": len(records), "sample": redact(sample),
+                          "total_linked": out.get("total_linked"),
+                      })
 
 
 async def tool_odoo_aggregate_records(ctx, args) -> ToolResult:
