@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { BranchNode, ChatMsg } from '../../lib/chatApi'
 import { MarkdownView } from '../MarkdownView'
+import { CopyButton } from '../ui/CopyButton'
 import { ExplorationTable } from '../../features/data-exploration/ExplorationTable'
 import type { ExplorationResult } from '../../features/data-exploration/ExplorationTable'
 import { CorrelationGraph } from '../../features/relationships/CorrelationGraph'
@@ -148,7 +149,7 @@ function UserMessage({
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status} />
-        <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Copier</button>
+        <CopyButton text={text} />
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
@@ -199,7 +200,7 @@ function AssistantMessage({
   const toolParts = message.parts.filter((p): p is Extract<ChatMsg['parts'][number], { type: 'tool_call' }> => p.type === 'tool_call')
   return (
     <div className="flex flex-col items-start">
-      <div className="w-full rounded-2xl rounded-bl-md bg-slate-100/80 px-4 py-3">
+      <div className="w-full rounded-2xl rounded-bl-md border border-slate-200/70 bg-surface-1 px-4 py-3">
         {toolParts.map((p) => {
           if (p.tool === 'inspect_source' && p.result && !p.result.status) {
             return <SourceIntelligenceCard key={p.id} intel={p.result as unknown as SourceIntelligence} />
@@ -236,15 +237,15 @@ function AssistantMessage({
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status === 'error' ? '' : message.status} />
-        {text && <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Copier</button>}
+        {text && <CopyButton text={text} />}
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
           disabled={isRunning}
           onClick={() => onRegenerate(message.id)}
-          className="text-[11px] font-medium text-slate-400 hover:text-brand-600 disabled:opacity-40"
+          className="text-[11px] font-medium text-slate-400 transition-colors hover:text-brand-600 disabled:opacity-40"
         >
-          Régénérer ↻
+          {message.status === 'error' ? 'Réessayer ↻' : 'Régénérer ↻'}
         </button>
 
       </div>
@@ -281,19 +282,22 @@ export function ChatMessages({
     <div className="flex flex-col gap-5 px-1 py-4">
       {messages.map((m) =>
         m.role === 'user' ? (
-          <UserMessage key={m.id} message={m} branches={branches} headId={headId} onEdit={onEdit} onSwitchBranch={onSwitchBranch} busy={isRunning} />
+          <div key={m.id} className="al-event-in">
+            <UserMessage message={m} branches={branches} headId={headId} onEdit={onEdit} onSwitchBranch={onSwitchBranch} busy={isRunning} />
+          </div>
         ) : (
-          <AssistantMessage
-            key={m.id}
-            message={m}
-            branches={branches}
-            headId={headId}
-            isRunning={isRunning}
-            onRegenerate={onRegenerate}
-            onSwitchBranch={onSwitchBranch}
-            onInvestigate={onInvestigate}
-            onOpenThread={onOpenThread}
-          />
+          <div key={m.id} className="al-event-in">
+            <AssistantMessage
+              message={m}
+              branches={branches}
+              headId={headId}
+              isRunning={isRunning}
+              onRegenerate={onRegenerate}
+              onSwitchBranch={onSwitchBranch}
+              onInvestigate={onInvestigate}
+              onOpenThread={onOpenThread}
+            />
+          </div>
         ),
       )}
       <div ref={bottomRef} />

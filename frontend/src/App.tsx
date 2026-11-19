@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from './components/AppShell'
+import { ToastProvider } from './components/ui/toast'
 import { ChatWorkspaceProvider } from './lib/chatWorkspaceContext'
 import { ConnectionsPage } from './pages/Connections'
 import { EvidenceExplorerPage } from './pages/EvidenceExplorer'
@@ -21,6 +22,7 @@ import { SettingsPage } from './pages/Settings'
 export default function App() {
   return (
     <BrowserRouter>
+      <ToastProvider>
       <ChatWorkspaceProvider>
         <Routes>
           <Route element={<AppShell />}>
@@ -40,6 +42,7 @@ export default function App() {
           </Route>
         </Routes>
       </ChatWorkspaceProvider>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

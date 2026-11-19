@@ -64,7 +64,7 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${
+        className={`al-event-in relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${
           wide ? 'max-w-2xl' : 'max-w-lg'
         }`}
       >

@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { steerRun } from '../lib/api'
 import { useChatWorkspaceCtx } from '../lib/chatWorkspaceContext'
+import { useToast } from './ui/toast'
 import { ChatCenter } from './chat/ChatCenter'
 import { InvestigationPanel } from './chat/InvestigationPanel'
 import { ThreadSidebar } from './chat/ThreadSidebar'
@@ -21,7 +22,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [investigationOpen, setInvestigationOpen] = useState(false)
-  const [navigationError, setNavigationError] = useState('')
+  const { toast } = useToast()
 
   const isChatRoute = CHAT_ROUTES.has(location.pathname)
   const subPageTitle = isChatRoute
@@ -42,17 +43,36 @@ export function AppShell() {
           void ws.selectThread(id)
           if (!isChatRoute) navigate('/chat')
         }}
-        onNew={() => { setNavigationError(''); void ws.newThread().then(() => navigate('/chat')).catch(() => setNavigationError('Création de la conversation impossible. Vérifiez la connexion au serveur.')) }}
-        onUpdate={ws.updateMetadata}
-        onArchive={(id) => void ws.archive(id)}
-        onRestore={(id) => void ws.restore(id)}
-        onDelete={(id) => void ws.remove(id)}
+        onNew={() => {
+          void ws.newThread()
+            .then(() => { navigate('/chat'); toast('success', 'Nouvelle conversation créée.') })
+            .catch(() => toast('error', 'Création impossible — vérifiez la connexion au serveur.'))
+        }}
+        onUpdate={(id, changes) => {
+          return ws.updateMetadata(id, changes)
+            .then(() => toast('success', changes.title ? 'Conversation renommée.' : 'Épinglage mis à jour.'))
+            .catch(() => toast('error', 'Mise à jour impossible.'))
+        }}
+        onArchive={(id) => {
+          void ws.archive(id)
+            .then(() => toast('success', 'Conversation archivée — les messages et preuves restent conservés.'))
+            .catch(() => toast('error', 'Archivage impossible.'))
+        }}
+        onRestore={(id) => {
+          void ws.restore(id)
+            .then(() => toast('success', 'Conversation restaurée.'))
+            .catch(() => toast('error', 'Restauration impossible.'))
+        }}
+        onDelete={(id) => {
+          void ws.remove(id)
+            .then(() => toast('success', 'Conversation masquée — messages, preuves et runs restent conservés.'))
+            .catch(() => toast('error', 'Suppression impossible.'))
+        }}
         mobileOpen={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}
       />
 
       <main className="relative min-w-0 flex-1">
-        {navigationError && <div role="alert" className="absolute left-4 right-4 top-4 z-50 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{navigationError}<button type="button" className="ml-3 font-semibold" onClick={() => setNavigationError('')}>Fermer</button></div>}
         {/* conversation : toujours montée, invisibilisée sous une sous-page (état + scroll préservés) */}
         <div
           className={`absolute inset-0 flex overflow-hidden ${
