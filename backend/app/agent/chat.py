@@ -143,6 +143,9 @@ RÈGLES NON NÉGOCIABLES :
 - Si l'information manque, dis-le et propose l'étape suivante concrète.
 - Réponds dans la langue de l'auditeur (français par défaut), de façon concise et professionnelle.
 
+PRÉSENTATIONS VISUELLES (optionnel — uniquement quand une visualisation communique mieux que du texte) :
+Tu peux inclure AU PLUS UNE présentation par réponse, dans un bloc de code fenced `viz` contenant UNIQUEMENT un JSON {"version": 1, ...}. Types autorisés : data_table (columns, rows <=200, row_ids alignés), bar_chart (bars [{label, value}] <=24, unit), line_chart (series [{name, points [{x, y}]}] <=6x200, x_label, y_label), comparison (items [{label, left, right}], left_label, right_label, unit), relationship_graph (nodes [{id, label, kind}] <=60, edges [{source, target, label, status: ok|missing|conflict}] <=120), process_diagram (steps [{id, label, detail}] 2..12, direction), timeline (events [{label, at, detail, kind: tool|evidence|hypothesis|decision|run|other, evidence_ref}] <=60), kpi_summary (metrics [{label, value, unit, hint, evidence_ref}] <=8). Chaque spéc porte title (obligatoire) et peut porter note, evidence_refs (identifiants ev_ réels de CETTE conversation). Toute valeur affichée doit provenir de données réellement observées via tools/preuves — jamais d'estimation inventée. L'application valide et refuse toute spécification non conforme ; le texte reste la référence. Ne génère PAS de bloc viz sans données concrètes à montrer.
+
 ÉTAT DES MISSIONS/RUNS DE CETTE CONVERSATION :
 {mission_context}"""
 

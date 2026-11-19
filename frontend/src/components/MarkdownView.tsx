@@ -1,10 +1,23 @@
 import type { ReactNode } from 'react'
 
+import { VizBlock } from '../features/intelligent-ui/VizBlock'
+import type { VizCallbacks } from '../features/intelligent-ui/renderers'
+
 /**
  * Rendu markdown léger (aucune dépendance) : titres, gras, italique, code
  * inline, blocs de code, listes, séparateurs. Le rapport du backend reste
  * téléchargeable en .md pour un rendu complet.
+ *
+ * Canal Generative UI (Phase 3) : un bloc ```viz contenant une spécification
+ * JSON conforme au registre (version, type allowlisté, données bornées,
+ * preuves référencées) est VALIDÉ puis rendu par les composants approuvés.
+ * Une spécification invalide est rendue comme message de repli — jamais exécutée.
  */
+
+export interface MarkdownViewProps {
+  markdown: string
+  vizCallbacks?: VizCallbacks
+}
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = []
@@ -37,7 +50,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
-export function MarkdownView({ markdown }: { markdown: string }) {
+export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
   const lines = markdown.split('\n')
   const blocks: ReactNode[] = []
   let i = 0
@@ -46,8 +59,9 @@ export function MarkdownView({ markdown }: { markdown: string }) {
   while (i < lines.length) {
     const line = lines[i]
 
-    // Bloc de code
+    // Bloc de code — canal viz si le fence est `viz`
     if (line.trimStart().startsWith('```')) {
+      const fence = line.trimStart().slice(3).trim().toLowerCase()
       const codeLines: string[] = []
       i += 1
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
@@ -55,6 +69,16 @@ export function MarkdownView({ markdown }: { markdown: string }) {
         i += 1
       }
       i += 1 // fermant
+      if (fence === 'viz') {
+        let raw: unknown = null
+        try {
+          raw = JSON.parse(codeLines.join('\n'))
+        } catch {
+          raw = null
+        }
+        blocks.push(<VizBlock key={`b${key++}`} raw={raw} callbacks={vizCallbacks} />)
+        continue
+      }
       blocks.push(
         <pre
           key={`b${key++}`}

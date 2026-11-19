@@ -11,6 +11,7 @@ import { RelatedInvestigations } from '../../features/investigation-memory/Relat
 import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIntelligenceCard'
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
+import type { VizCallbacks } from '../../features/intelligent-ui/renderers'
 
 interface MessagesProps {
   messages: ChatMsg[]
@@ -22,7 +23,17 @@ interface MessagesProps {
   onSwitchBranch: (messageId: string) => void
   onInvestigate?: (record: Record<string, unknown>) => void
   onOpenThread?: (threadId: string) => void
+  onOpenEvidence?: (evidenceId: string) => void
 }
+
+const vizCallbacksFor = (
+  onInvestigate?: MessagesProps['onInvestigate'],
+  onOpenEvidence?: (id: string) => void,
+): VizCallbacks => ({
+  onOpenEvidence,
+  onInvestigateRecord: (record) => onInvestigate?.(record),
+  onInvestigateLabel: (label) => onInvestigate?.({ _label: label }),
+})
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {
   return branches.filter((n) => n.parent_id === message.parent_id && n.role === message.role)
@@ -186,6 +197,7 @@ function AssistantMessage({
   onSwitchBranch,
   onInvestigate,
   onOpenThread,
+  onOpenEvidence,
 }: {
   message: ChatMsg
   branches: BranchNode[]
@@ -195,6 +207,7 @@ function AssistantMessage({
   onSwitchBranch: (id: string) => void
   onInvestigate?: (record: Record<string, unknown>) => void
   onOpenThread?: (threadId: string) => void
+  onOpenEvidence?: (evidenceId: string) => void
 }) {
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
   const toolParts = message.parts.filter((p): p is Extract<ChatMsg['parts'][number], { type: 'tool_call' }> => p.type === 'tool_call')
@@ -224,7 +237,7 @@ function AssistantMessage({
         })}
         {text && (
           <div className="text-[15px] leading-relaxed text-slate-800 [&_p]:my-1.5 [&_li]:my-0.5">
-            <MarkdownView markdown={text} />
+            <MarkdownView markdown={text} vizCallbacks={vizCallbacksFor(onInvestigate, onOpenEvidence)} />
           </div>
         )}
         {message.status === 'running' && toolParts.length === 0 && !text && (
@@ -264,6 +277,7 @@ export function ChatMessages({
   onSwitchBranch,
   onInvestigate,
   onOpenThread,
+  onOpenEvidence,
 }: MessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -296,6 +310,7 @@ export function ChatMessages({
               onSwitchBranch={onSwitchBranch}
               onInvestigate={onInvestigate}
               onOpenThread={onOpenThread}
+              onOpenEvidence={onOpenEvidence}
             />
           </div>
         ),

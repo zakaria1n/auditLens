@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useChatModel } from '../../features/chat/useChatModel'
 
 import { searchThread } from '../../lib/chatApi'
@@ -26,6 +26,7 @@ interface Props {
 export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
   const ws = useChatWorkspaceCtx()
   const location = useLocation()
+  const navigate = useNavigate()
   const chatModel = useChatModel(location.pathname)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [searchQuery, setSearchQuery] = useState('')
@@ -131,7 +132,8 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
             />
           </div>
         ) : (
-          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onInvestigate={record => { const ids = Object.entries(record).filter(([k]) => k.endsWith("_id") || k === "id").map(([k, v]) => k + "=" + String(v)); const label = ids.length > 0 ? ids.join(', ') : JSON.stringify(record).slice(0, 200); const text = "Investigue cet enregistrement (" + label + ") : verifie sa coherence, confronte-le aux autres preuves collectees et documente toute anomalie avec les preuves correspondantes."; if (ws.activeId) { void ws.send(text) } else { void (async () => { const t = await ws.newThread(text.slice(0, 80)); await ws.send(text, t.id) })() } }} />}</div></div>
+          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={evidenceId => { const runId = ws.thread?.run_ids?.[ws.thread.run_ids.length - 1]; navigate(runId ? `/evidence?run_id=${runId}&focus=${evidenceId}` : '/evidence') }}
+onInvestigate={record => { const ids = Object.entries(record).filter(([k]) => k.endsWith("_id") || k === "id").map(([k, v]) => k + "=" + String(v)); const label = ids.length > 0 ? ids.join(', ') : JSON.stringify(record).slice(0, 200); const text = "Investigue cet enregistrement (" + label + ") : verifie sa coherence, confronte-le aux autres preuves collectees et documente toute anomalie avec les preuves correspondantes."; if (ws.activeId) { void ws.send(text) } else { void (async () => { const t = await ws.newThread(text.slice(0, 80)); await ws.send(text, t.id) })() } }} />}</div></div>
           <footer className="bg-white px-4 pb-4 pt-2"><div className="mx-auto max-w-[760px]"><ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={ws.send} onCancel={() => void ws.cancel()} /></div></footer></>
         )}
       </section>
