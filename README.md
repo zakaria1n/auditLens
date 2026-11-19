@@ -81,3 +81,20 @@ Une mission sur des **données inédites** utilise des outils autorisés, produi
 <div dir="rtl">
 المشروع أداة مساعدة للـ <code>Auditeur SI</code>، ماشي منصة تدّعي أنها قادرة تدقق جميع الأنظمة وحدها. نسخة <code>V1</code> خاصها تدعم <code>Odoo Local</code> و<code>REST API</code> و<code>Web App</code> وملفات البيانات، والـ <code>AI Harness</code> ينفّذ أدوات حقيقية ويعطي نتائج مرتبطة بأدلة مع مراجعة بشرية. النماذج المجانية داخل <code>OpenCode</code> ما نعتابروهاش <code>API</code> مجانية لتطبيقنا؛ والمستخدم يقدر يربط المفتاح ديالو حسب المزود.
 </div>
+
+
+## Sources supportées (stabilisation 2026-11)
+
+- **Fichiers structurés** : CSV, XLSX, **JSON first-class** (racines tableau/objet+tableau/objet/primitif, imbrication aplatie en chemins pointés `a.b.c`, JSONL accepté ; bornes 10 Mo / 100k lignes / profondeur 12).
+- **Odoo générique read-only** : tous les modèles métier lisibles par le compte d'audit (standards + customs) via `odoo_list_models` / `odoo_describe_model` / `odoo_query_records` / `odoo_follow_relation` / `odoo_aggregate_records`. Modèles techniques/sensibles (ir.*, tokens, credentials) et champs binaires refusés. Les outils spécialisés (réconciliation commandes/factures/stock/achats) restent disponibles.
+- **REST APIs** : endpoints déclarés + inspection de contrat OpenAPI.
+- **Web** : parcours Playwright prédéfinis.
+
+## Démarche de démonstration
+
+1. `cd backend && uv run uvicorn app.main:app --port 8000` — vérifier `GET /api/reports` => 200 (sinon serveur stale : voir RUNBOOK).
+2. `cd frontend && npm run dev` → http://localhost:5173/chat
+3. Chat : « inspecte la source orders.json » → carte Source Intelligence.
+4. « Audite cette source et vérifie le contrat » → plan LLM, tools, preuves, constats, revue humaine.
+5. « Compare qty et delivered sur l'evidence de validation » → table interactive avec incohérences surlignées.
+6. Panel Investigation : Hypothèses / Couverture / Différentiel / Remédiation (transitions humaines).
