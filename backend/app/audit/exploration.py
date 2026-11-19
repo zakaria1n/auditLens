@@ -19,6 +19,7 @@ from typing import Any
 
 MAX_EXPLORE_ROWS = 5000
 MAX_RESULTS = 50
+MAX_KNOWN_FIELDS = 100  # borne de la liste de champs dans les erreurs (contexte LLM compact)
 
 
 def _to_number(value: Any) -> Decimal | None:
@@ -29,6 +30,52 @@ def _to_number(value: Any) -> Decimal | None:
         return Decimal(str(value).replace(" ", "").replace(",", "."))
     except (InvalidOperation, ValueError, ArithmeticError):
         return None
+
+
+def known_fields(records: list[dict]) -> set[str]:
+    """Union des champs observés sur TOUS les enregistrements (les enregistrements
+    JSON hétérogènes peuvent porter des champs différents d'une ligne à l'autre)."""
+    fields: set[str] = set()
+    for rec in records[:MAX_EXPLORE_ROWS]:
+        fields.update(rec.keys())
+    return fields
+
+
+def validate_spec_fields(spec: dict, records: list[dict]) -> dict[str, Any] | None:
+    """Valide TOUT champ référencé par la spéc contre l'union des champs observés.
+
+    Retourne None si tous les champs existent ; sinon un dict structuré compact
+    (champs demandés inconnus, champs disponibles bornés) pour permettre au modèle
+    de se corriger en une passe — aucune substitution devinée, aucune valeur inventée.
+    """
+    known = known_fields(records)
+    requested: list[str] = []
+    for f in spec.get("filter") or []:
+        requested.append(str(f.get("field")))
+    for s in spec.get("sort") or []:
+        requested.append(str(s.get("field")))
+    if spec.get("group_by"):
+        requested.append(str(spec["group_by"]))
+    agg = spec.get("aggregate") or {}
+    if agg.get("field"):
+        requested.append(str(agg["field"]))
+    cmp_ = spec.get("compare")
+    if isinstance(cmp_, dict):
+        if cmp_.get("left_field"):
+            requested.append(str(cmp_["left_field"]))
+        if cmp_.get("right_field"):
+            requested.append(str(cmp_["right_field"]))
+    requested.extend(str(f) for f in spec.get("fields") or [])
+    unknown = sorted({f for f in requested if f and f != "*" and f not in known})
+    if not unknown:
+        return None
+    available = sorted(known)
+    return {
+        "unknown_fields": unknown,
+        "available_fields": available[:MAX_KNOWN_FIELDS],
+        "available_fields_count": len(available),
+        "available_fields_truncated": len(available) > MAX_KNOWN_FIELDS,
+    }
 
 
 def apply_exploration(records: list[dict], spec: dict) -> dict[str, Any]:
@@ -48,19 +95,31 @@ def apply_exploration(records: list[dict], spec: dict) -> dict[str, Any]:
     rows = records[:MAX_EXPLORE_ROWS]
     truncated_input = len(records) > MAX_EXPLORE_ROWS
     fields = spec.get("fields") or []
+    known = known_fields(rows)
     unknown_fields: set[str] = set()
+
+    def _flag_unknown(field: str) -> bool:
+        """Marque un champ absent de tous les enregistrements ; True => opération sautée."""
+        if field and field != "*" and rows and field not in known:
+            unknown_fields.add(field)
+            return True
+        return False
 
     def project(rec: dict) -> dict:
         if not fields:
             return rec
         return {f: rec.get(f) for f in fields}
 
+    # champs de projection inconnus : marqués explicitement (projection nulls standalone ;
+    # la tool data_explore rejette la spéc en amont)
+    for f in fields:
+        _flag_unknown(str(f))
+
     # --- filtres (chaînes ou numériques ; opérateurs bornés) ---
     for f in spec.get("filter") or []:
         field, op = str(f.get("field")), str(f.get("op"))
         value = f.get("value")
-        if rows and field not in rows[0] and field != "*":
-            unknown_fields.add(field)
+        if _flag_unknown(field):
             continue
         if op == "not_null":
             rows = [r for r in rows if r.get(field) is not None and r.get(field) != ""]
@@ -95,6 +154,8 @@ def apply_exploration(records: list[dict], spec: dict) -> dict[str, Any]:
     cmp_spec = spec.get("compare")
     if isinstance(cmp_spec, dict) and cmp_spec.get("left_field") and cmp_spec.get("right_field"):
         lf, rf, cop = str(cmp_spec["left_field"]), str(cmp_spec["right_field"]), str(cmp_spec.get("op", "ne"))
+        _flag_unknown(lf)
+        _flag_unknown(rf)
         mismatches: list[dict] = []
         match_count = 0
         for i, r in enumerate(rows):
@@ -126,6 +187,9 @@ def apply_exploration(records: list[dict], spec: dict) -> dict[str, Any]:
     groups: list[dict] | None = None
     group_field = spec.get("group_by")
     agg = spec.get("aggregate") or {}
+    if group_field is not None:
+        if _flag_unknown(str(group_field)):
+            group_field = None  # regroupement impossible : rapporté dans unknown_fields
     if group_field:
         buckets: dict[str, list[dict]] = {}
         for r in rows:
@@ -158,6 +222,8 @@ def apply_exploration(records: list[dict], spec: dict) -> dict[str, Any]:
     # --- tri (stable, numérique si la colonne est numérique sinon lexical) ---
     for s in reversed(spec.get("sort") or []):
         field, direction = str(s.get("field")), str(s.get("dir", "asc"))
+        if _flag_unknown(field):
+            continue  # tri sur champ inexistant : rapporté, jamais ordre trompeur
         numeric = bool(rows) and _to_number(rows[0].get(field)) is not None
         rows.sort(
             key=(lambda r: (_to_number(r.get(field)) is None, _to_number(r.get(field)) or Decimal(0)))

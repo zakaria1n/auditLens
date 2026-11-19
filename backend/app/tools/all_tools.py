@@ -13,6 +13,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from ..audit.controls import CONTROL_CATALOG, control_to_dict, get_control
+from ..audit.exploration import (
+    MAX_EXPLORE_ROWS,
+    apply_exploration,
+    known_fields,
+    validate_spec_fields,
+)
 from ..audit.rules import RULE_SETS, evaluate_rule_set, get_rule_set, profile_dataframe
 from ..connectors.files.connector import FileConnector
 from ..connectors.ssrf import validate_url
@@ -100,7 +106,9 @@ class DataExploreInput(BaseModel):
             "Spécification d'exploration TYPÉE : fields (projection), filter "
             "[{field, op: eq|ne|gt|gte|lt|lte|contains|in|not_null, value}], sort "
             "[{field, dir}], group_by + aggregate {op: count|sum|avg|min|max, field}, "
-            "compare {left_field, right_field, op}, limit (<=50). Calculs déterministes."
+            "compare {left_field, right_field, op}, limit (<=50). Calculs déterministes. "
+            "Champ inconnu => erreur structurée listant les champs disponibles : corriger "
+            "en une passe, ne pas réessayer la même spéc."
         )
     )
 
@@ -159,6 +167,10 @@ async def _evidence_records(
     records = payload.get("records") or []
     if records:
         return records, None, False
+    exploration = payload.get("exploration")
+    if isinstance(exploration, dict) and exploration.get("table"):
+        # résultat d'une exploration : ré-exploitable (exploration chaînée)
+        return exploration["table"], None, False
     if ev.type == "raw_file" and payload.get("path"):
         fc = FileConnector({"path": payload.get("path"), "original_name": ev.title})
         try:
@@ -808,12 +820,42 @@ async def tool_get_evidence_excerpt(ctx: ToolContext, args: dict) -> ToolResult:
 MAX_SEARCH_SCAN = 5000  # bornes CPU : arrêt du scan au-delà (docs/05 exécution bornée)
 
 
+async def _fields_in_source_evidence(ctx: ToolContext, ev, full: dict, fields: list[str]) -> dict[str, str]:
+    """Pour une evidence `exploration` projetée : champs inconnus ici mais présents dans
+    l'evidence source (exclues par la projection) → mapping champ → evidence source.
+    Permet au modèle de ré-exécuter sur la bonne evidence sans deviner de correspondance."""
+    src_id = (full.get("payload") or {}).get("source_evidence_id")
+    if ev.type != "exploration" or not src_id:
+        return {}
+    try:
+        src_ev, src_full = await _load_evidence(ctx, str(src_id))
+        src_records, _err, _t = await _evidence_records(ctx, src_ev, src_full, file_limit=MAX_EXPLORE_ROWS)
+    except Exception:  # noqa: BLE001 — source indisponible : l'erreur principale reste exploitable
+        return {}
+    known_src = known_fields(src_records)
+    return {f: str(src_id) for f in fields if f in known_src}
+
+
+def _explore_next_actions(field_error: dict) -> list[str]:
+    actions: list[str] = []
+    if field_error.get("exists_in_source_evidence"):
+        sources = sorted(set(field_error["exists_in_source_evidence"].values()))
+        actions.append(
+            f"ré-exécuter data_explore directement sur {', '.join(sources)} "
+            "(la projection de cette evidence exclut ces champs)"
+        )
+    actions.append("réexécuter data_explore en n'utilisant que des champs de la liste disponible")
+    actions.append("inspecter la structure réelle : get_evidence_excerpt (premières lignes) ou discover_source (colonnes)")
+    actions.append("localiser une valeur précise : evidence_search")
+    return actions
+
+
 async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
     """Exploration bornée et déterministe d'une evidence d'enregistrements (Phase 2/10).
     Le LLM décide QUOI explorer ; les calculs sont exécutés ici (aucun SQL, aucune
-    exécution arbitraire). Le résultat devient une evidence `exploration` traçable."""
-    from ..audit.exploration import MAX_EXPLORE_ROWS, apply_exploration
-
+    exécution arbitraire). Le résultat devient une evidence `exploration` traçable.
+    Champs inconnus → erreur structurée (demandés / disponibles / présents dans la
+    source / actions de correction) : le modèle se corrige en une passe, sans deviner."""
     ev, full = await _load_evidence(ctx, args["evidence_id"])
     records, load_error, _truncated = await _evidence_records(ctx, ev, full, file_limit=MAX_EXPLORE_ROWS)
     if load_error:
@@ -835,12 +877,34 @@ async def tool_data_explore(ctx: ToolContext, args: dict) -> ToolResult:
             tool_call_id="", tool="data_explore", status="error",
             error="spec vide : fournir au moins une opération (filter/sort/group_by/aggregate/compare/fields)",
         )
+    field_error = validate_spec_fields(spec, records)
+    if field_error:
+        exists_in_source = await _fields_in_source_evidence(
+            ctx, ev, full, field_error["unknown_fields"],
+        )
+        if exists_in_source:
+            field_error["exists_in_source_evidence"] = exists_in_source
+        field_error["next_actions"] = _explore_next_actions(field_error)
+        message = (
+            f"champs inconnus dans la spécification : {', '.join(field_error['unknown_fields'])} — "
+            f"champs disponibles ({field_error['available_fields_count']}) : "
+            f"{', '.join(field_error['available_fields'])}"
+            + (" … (liste tronquée)" if field_error["available_fields_truncated"] else "")
+        )
+        if exists_in_source:
+            sources = sorted(set(exists_in_source.values()))
+            message += (f" — champs présents dans l'evidence source {', '.join(sources)} : "
+                        "ré-exécuter sur cette evidence")
+        return ToolResult(
+            tool_call_id="", tool="data_explore", source_id=ev.source_id,
+            status="error", error=message, preview=field_error,
+        )
     result = apply_exploration(records, spec)
-    if result.get("unknown_fields"):
+    if result.get("unknown_fields"):  # filet de sécurité (standalone) — ne devrait pas survenir
         return ToolResult(
             tool_call_id="", tool="data_explore", status="error",
             error=f"champs inconnus dans la spécification : {', '.join(result['unknown_fields'])} "
-                  f"(champs disponibles : {', '.join(sorted(records[0].keys()))})",
+                  f"(champs disponibles : {', '.join(sorted(known_fields(records)))})",
         )
     result["source_evidence_id"] = ev.id
     result["source_evidence_title"] = ev.title
@@ -1105,7 +1169,7 @@ TOOL_DEFS: list[dict] = [
           [], PermissionLevel.read, EvidenceExcerptInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "row_start": {"type": "integer"}, "row_end": {"type": "integer"}}, "required": ["evidence_id"]}),
     _spec("data_explore", "Explorer les données",
-          "Exploration bornée et DÉTERMINISTE d'une evidence d'enregistrements : filtre, tri, group_by+agrégat (count/sum/avg/min/max), comparaison de champs, projection, limite. Spéc JSON typée — calculs exécutés par le backend, jamais par le modèle.",
+          "Exploration bornée et DÉTERMINISTE d'une evidence d'enregistrements (y compris resultats d'exploration et raw_file CSV/XLSX/JSON aplatis) : filtre, tri, group_by+agrégat (count/sum/avg/min/max), comparaison de champs, projection, limite. Spéc JSON typée — calculs exécutés par le backend, jamais par le modèle. Champ inconnu => erreur structurée avec champs disponibles et actions de correction.",
           [], PermissionLevel.local, DataExploreInput,
           {"type": "object", "properties": {"evidence_id": {"type": "string"}, "spec": {"type": "object", "properties": {"fields": {"type": "array", "items": {"type": "string"}}, "filter": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "not_null"]}, "value": {}}}}, "sort": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "dir": {"type": "string", "enum": ["asc", "desc"]}}}}, "group_by": {"type": "string"}, "aggregate": {"type": "object", "properties": {"op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}, "field": {"type": "string"}}}, "compare": {"type": "object", "properties": {"left_field": {"type": "string"}, "right_field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte"]}}}, "limit": {"type": "integer"}}}, "required": ["evidence_id", "spec"]}}),
     _spec("odoo_list_models", "Lister les modèles Odoo",
