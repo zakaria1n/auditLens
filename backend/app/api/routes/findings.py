@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from ...core.errors import EvidenceNotFound
 from ..deps import deps
@@ -27,12 +27,23 @@ async def get_evidence(evidence_id: str, request: Request, mission_id: str):
 
 class ReviewBody(BaseModel):
     decision: str  # accepted | rejected | needs_more_evidence
-    reason: str = ""
+    reason: str = Field(min_length=1, max_length=2000)  # justification obligatoire (docs/02), vérifiée serveur
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("justification obligatoire (ne peut pas être vide)")
+        return value
 
 
 @router.post("/api/findings/{finding_id}/review")
 async def review_finding(finding_id: str, body: ReviewBody, request: Request):
-    """Revue humaine : Accept / Reject / Needs More Evidence avec justification (docs/02 étape 8)."""
+    """Revue humaine : Accept / Reject / Needs More Evidence avec justification (docs/02 étape 8).
+
+    La décision est IMMUABLE une fois enregistrée : toute nouvelle revue est refusée
+    (409) — le UI affiche déjà « décision non modifiable », le serveur l'applique."""
     d = deps(request)
     if body.decision not in (FindingStatus.accepted.value, FindingStatus.rejected.value, FindingStatus.needs_more_evidence.value):
         raise HTTPException(400, "décision invalide (accepted|rejected|needs_more_evidence)")
@@ -41,6 +52,10 @@ async def review_finding(finding_id: str, body: ReviewBody, request: Request):
         raise HTTPException(404, "finding inconnu")
     if finding.status == FindingStatus.rejected:
         raise HTTPException(400, "finding déjà rejeté par le validateur structurel — revue impossible")
+    if finding.status != FindingStatus.needs_review:
+        raise HTTPException(
+            409, f"décision déjà enregistrée ({finding.status.value}) — constat non modifiable (docs/02)"
+        )
 
     from ...models import AuditorReview
 

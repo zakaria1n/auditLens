@@ -116,6 +116,36 @@ async def test_hallucinated_evidence_rejected_by_validator(client, faulty_csv):
 
 
 @pytest.mark.asyncio
+async def test_review_justification_mandatory_and_decision_immutable(client, faulty_csv):
+    """Phase 3 — bugs trouvés en live : justification vide acceptée (200) et décision
+    déjà enregistrée écrasable silencieusement. Serveur = même garantie que l'UI."""
+    up = await upload_csv(client, "orders_review.csv", faulty_csv)
+    result = await run_mission(client, up["source"]["id"])
+    findings = (await client.get(f"/api/runs/{result['run_id']}/findings")).json()["findings"]
+    target = next(f for f in findings if f["status"] == "needs_review")
+
+    # justification vide/absente → refus serveur (422 pydantic)
+    r_empty = await client.post(f"/api/findings/{target['id']}/review",
+                                json={"decision": "accepted", "reason": "   "})
+    assert r_empty.status_code in (400, 422)
+    r_none = await client.post(f"/api/findings/{target['id']}/review",
+                               json={"decision": "accepted"})
+    assert r_none.status_code in (400, 422)
+
+    # revue valide
+    r_ok = await client.post(f"/api/findings/{target['id']}/review",
+                             json={"decision": "accepted", "reason": "vérifié contre la preuve"})
+    assert r_ok.status_code == 200 and r_ok.json()["finding"]["status"] == "accepted"
+
+    # décision immuable : toute nouvelle revue → 409 (l'état accepté ne peut pas basculer)
+    r_again = await client.post(f"/api/findings/{target['id']}/review",
+                                json={"decision": "rejected", "reason": "tentative de bascule"})
+    assert r_again.status_code == 409
+    final = (await client.get(f"/api/runs/{result['run_id']}/findings")).json()["findings"]
+    assert next(f for f in final if f["id"] == target["id"])["status"] == "accepted"
+
+
+@pytest.mark.asyncio
 async def test_evidence_integrity_endpoint_and_scope(client, faulty_csv):
     up = await upload_csv(client, "orders_scope.csv", faulty_csv)
     # evidence d'import appartient au workspace d'imports (_imports) : accessible via mission ?
