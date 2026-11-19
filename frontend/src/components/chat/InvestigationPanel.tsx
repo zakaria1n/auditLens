@@ -97,9 +97,10 @@ function CoverageSection({
 function DiffInline({ missionId, targetRunId }: { missionId: string; targetRunId: string }) {
   const runs = useRunIds(missionId)
   const others = runs.filter((r) => r !== targetRunId)
-  if (others.length === 0) return null
-  const baseRun = others[others.length - 1] // run précédent le plus ancien lié au thread
+  const baseRun = others.length > 0 ? others[others.length - 1] : null // run précédent le plus ancien
+  // hook toujours appelé (ordre stable) : baseRun null => requête ignorée par useRunDiff
   const { diff, error, loading } = useRunDiff(missionId, baseRun, targetRunId)
+  if (!baseRun) return null
   if (loading) return <p className="text-xs text-slate-400">Comparaison…</p>
   if (error) return <p className="text-xs text-slate-400">Différentiel indisponible : {error}</p>
   if (!diff || diff.entries.length === 0) return null

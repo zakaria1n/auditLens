@@ -17,23 +17,38 @@ uv run python demo_data/generate_demo.py all   # jeux de données démo
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
-### Anti-serveur-stale (Phase 1 stabilisation)
+### Redémarrer le backend sans confusion de version (anti-serveur-stale)
 
 Un backend lancé avant des modifications de code sert une version périmée (routes
-Phase 5+ en 404). Procédure fiable :
+récentes en 404, bugs corrigés toujours présents). Procédure fiable :
 
 ```bash
-# 1. libérer le port si un uvicorn orphelin y survit (Windows)
-netstat -ano | grep ":8000" | grep LISTENING     # => PID
+# 1. libérer le port si un uvicorn orphelin y survit (Windows) — ne jamais tuer
+#    un PID qui n'est PAS celui du port 8000
+netstat -ano | grep ":8000" | grep LISTENING     # => PID (colonne 5)
 taskkill //F //PID <PID>
 
-# 2. démarrer et VÉRIFIER que les routes récentes répondent
+# 2. démarrer depuis backend/ (venv uv du projet)
 cd backend && uv run uvicorn app.main:app --port 8000
-curl -s http://localhost:8000/api/missions/<mission_id>/coverage   # 200 attendu
-curl -s http://localhost:8000/api/reports                          # 200 attendu
+
+# 3. VÉRIFIER L'IDENTITÉ DE BUILD : le commit affiché doit être le HEAD git
+curl -s http://localhost:8000/api/health
+# {"status":"ok","version":"0.1.0","git_commit":"<12 hex>","started_at":"…","pid":<PID>}
+git -C .. rev-parse --short=12 HEAD        # doit correspondre à git_commit
+
+# 4. vérifier les routes récentes
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/reports   # 200
 ```
 
-Un 404 sur /coverage ou /reports = serveur périmé : tuer le PID et relancer.
+Détection d'un serveur stale :
+- `git_commit` null ou ≠ HEAD → le process sert un ancien code : tuer le PID du
+  port 8000 et relancer (le `pid` de /api/health doit être celui de netstat).
+- 404 sur /api/reports → même cause.
+
+Données locales (conversations, evidences, missions) : tout est dans
+`backend/data/` (SQLite + fichiers evidence + uploads) — un redémarrage du
+processus ne perd RIEN ; ne jamais supprimer `backend/data/` pour « réparer »
+un serveur stale.
 
 - API : http://localhost:8000 — docs interactives : http://localhost:8000/docs
 - Contrat d'API exact : [docs/CONTRAT_API_IMPL.md](docs/CONTRAT_API_IMPL.md)
