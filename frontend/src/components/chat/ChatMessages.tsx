@@ -94,7 +94,7 @@ function EditComposer({
 }) {
   const [value, setValue] = useState(initial)
   return (
-    <div className="mt-2 rounded-xl border border-indigo-200 bg-white p-2">
+    <div className="mt-2 rounded-xl border border-brand-200 bg-white p-2">
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -115,7 +115,7 @@ function EditComposer({
           type="button"
           disabled={busy || !value.trim()}
           onClick={() => onSave(value)}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
+          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
           Envoyer (nouvelle branche)
         </button>
@@ -143,18 +143,18 @@ function UserMessage({
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 px-4 py-2.5 text-[15px] leading-relaxed text-white">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-4 py-2.5 text-[15px] leading-relaxed text-white">
         <p className="whitespace-pre-wrap">{text}</p>
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status} />
-        <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-indigo-600">Copier</button>
+        <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Copier</button>
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
           onClick={() => setEditing((v) => !v)}
           disabled={busy}
-          className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 disabled:opacity-40"
+          className="text-[11px] font-medium text-slate-400 hover:text-brand-600 disabled:opacity-40"
         >
           Modifier ↺
         </button>
@@ -228,7 +228,7 @@ function AssistantMessage({
         )}
         {message.status === 'running' && toolParts.length === 0 && !text && (
           <p className="flex items-center gap-2 text-sm text-slate-400">
-            <span className="al-pulse-dot inline-block h-2 w-2 rounded-full bg-indigo-500" />
+            <span className="al-pulse-dot inline-block h-2 w-2 rounded-full bg-brand-500" />
             L'assistant travaille…
           </p>
         )}
@@ -236,13 +236,13 @@ function AssistantMessage({
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status === 'error' ? '' : message.status} />
-        {text && <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-indigo-600">Copier</button>}
+        {text && <button type="button" onClick={() => void navigator.clipboard.writeText(text)} className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Copier</button>}
         <BranchPicker message={message} branches={branches} headId={headId} onSwitchBranch={onSwitchBranch} />
         <button
           type="button"
           disabled={isRunning}
           onClick={() => onRegenerate(message.id)}
-          className="text-[11px] font-medium text-slate-400 hover:text-indigo-600 disabled:opacity-40"
+          className="text-[11px] font-medium text-slate-400 hover:text-brand-600 disabled:opacity-40"
         >
           Régénérer ↻
         </button>

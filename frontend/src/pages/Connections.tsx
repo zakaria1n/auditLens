@@ -209,9 +209,9 @@ function SourceWizard({ onClose, onCreated }: { onClose: () => void; onCreated: 
                 key={t.type}
                 type="button"
                 onClick={() => setWizardType(t.type)}
-                className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors duration-150 hover:border-indigo-300 hover:bg-indigo-50"
+                className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
               >
-                <t.icon className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                <t.icon className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
                 <span>
                   <span className="block text-sm font-semibold text-slate-900">{t.label}</span>
                   <span className="block text-xs text-slate-500">{t.description}</span>
@@ -476,7 +476,7 @@ export function ConnectionsPage() {
       />
 
       {notice ? (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+        <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
           {notice}
         </div>
       ) : null}

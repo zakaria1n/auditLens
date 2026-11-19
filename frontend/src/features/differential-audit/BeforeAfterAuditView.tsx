@@ -22,7 +22,7 @@ export interface DiffResult {
 const STATUS_STYLE: Record<DiffEntry['status'], { cls: string; label: string }> = {
   persistent: { cls: 'bg-red-50 text-red-700', label: 'persistant' },
   resolved: { cls: 'bg-emerald-50 text-emerald-700', label: 'résolu (ré-inspecté)' },
-  new: { cls: 'bg-indigo-50 text-indigo-700', label: 'nouveau' },
+  new: { cls: 'bg-brand-50 text-brand-700', label: 'nouveau' },
   unknown: { cls: 'bg-slate-100 text-slate-600', label: 'incomparable' },
 }
 
@@ -68,7 +68,7 @@ export function BeforeAfterAuditView({
       <div className="flex flex-wrap gap-1.5 text-[11px]">
         <span className="rounded-md bg-red-50 px-2 py-0.5 text-red-700">{diff.summary.persistent} persistant(s)</span>
         <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700">{diff.summary.resolved} résolu(s)</span>
-        <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-indigo-700">{diff.summary.new} nouveau(x)</span>
+        <span className="rounded-md bg-brand-50 px-2 py-0.5 text-brand-700">{diff.summary.new} nouveau(x)</span>
         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">{diff.summary.unknown} incomparable(s)</span>
       </div>
 

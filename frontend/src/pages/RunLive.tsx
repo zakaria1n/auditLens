@@ -159,7 +159,7 @@ function buildTimeline(events: RunEvent[], runId: string): TimelineItem[] {
                   <Link
                     key={evId}
                     to={`/evidence?run_id=${runId}&focus=${evId}`}
-                    className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-mono text-xs text-indigo-700 transition-colors duration-150 hover:bg-indigo-100"
+                    className="rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-xs text-brand-700 transition-colors duration-150 hover:bg-brand-100"
                   >
                     {evId}
                   </Link>
@@ -214,7 +214,7 @@ function buildTimeline(events: RunEvent[], runId: string): TimelineItem[] {
               {data.id ? (
                 <>
                   {' · '}
-                  <Link to={`/evidence?run_id=${runId}&focus=${String(data.id)}`} className="font-mono text-indigo-600 hover:underline">
+                  <Link to={`/evidence?run_id=${runId}&focus=${String(data.id)}`} className="font-mono text-brand-600 hover:underline">
                     {String(data.id)}
                   </Link>
                 </>
@@ -753,7 +753,7 @@ export function RunLivePage() {
                     {h.evidence_refs.map((ref, i) => (
                       <span key={ref}>
                         {i > 0 ? ', ' : ''}
-                        <Link to={`/evidence?run_id=${runId}&focus=${ref}`} className="font-mono text-indigo-600 hover:underline">
+                        <Link to={`/evidence?run_id=${runId}&focus=${ref}`} className="font-mono text-brand-600 hover:underline">
                           {ref}
                         </Link>
                       </span>
@@ -804,7 +804,7 @@ export function RunLivePage() {
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Findings ({findings.length})</h2>
-            <Link to={`/findings?run_id=${runId}`} className="text-xs font-medium text-indigo-600 hover:underline">
+            <Link to={`/findings?run_id=${runId}`} className="text-xs font-medium text-brand-600 hover:underline">
               Ouvrir la revue complète →
             </Link>
           </div>

@@ -129,7 +129,7 @@ export function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ShieldIcon className="h-4 w-4 text-indigo-600" />
+            <ShieldIcon className="h-4 w-4 text-brand-600" />
             Configuration active {serverConfig ? `— source : ${serverConfig.source}` : ''}
           </CardTitle>
         </CardHeader>

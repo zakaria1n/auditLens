@@ -29,7 +29,7 @@ export function EvidenceList({ evidence, selectedId, onSelect }: EvidenceListPro
               aria-selected={selected}
               className={`w-full rounded-xl border px-4 py-3 text-left transition-colors duration-150 ${
                 selected
-                  ? 'border-indigo-300 bg-indigo-50'
+                  ? 'border-brand-300 bg-brand-50'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
             >

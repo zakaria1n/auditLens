@@ -43,7 +43,7 @@ export function PlanSteps({ plan, approved }: PlanStepsProps) {
               className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
                   {i + 1}
                 </span>
                 <span className="text-sm font-medium text-slate-900">{toolLabel(step.tool)}</span>

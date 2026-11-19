@@ -4,6 +4,7 @@ import { useChatModel } from '../../features/chat/useChatModel'
 
 import { searchThread } from '../../lib/chatApi'
 import { useChatWorkspaceCtx } from '../../lib/chatWorkspaceContext'
+import { WelcomeScreen } from '../../features/chat/components/WelcomeScreen'
 import { ChatMessages } from './ChatMessages'
 import { ChatComposer } from '../../features/chat/ChatComposer'
 
@@ -74,7 +75,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
                 if (e.key === 'Enter') void doSearch()
               }}
               placeholder="Rechercher dans la conversation (y compris compacté)…"
-              className="w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none lg:w-64"
+              className="w-56 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-300 focus:outline-none lg:w-64"
               disabled={!ws.activeId}
             />
             <button
@@ -99,7 +100,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
             type="button"
             onClick={onToggleInvestigation}
             aria-label="Ouvrir le panneau investigation"
-            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 lg:hidden"
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 xl:hidden"
             hidden={!ws.thread?.run_ids.length}
           >
             Investigation
@@ -109,7 +110,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
         {ws.notice && (
           <div
             className={`mx-4 mt-3 rounded-lg px-3 py-2 text-xs ${
-              ws.notice.kind === 'error' ? 'bg-red-50 text-red-700' : 'bg-violet-50 text-violet-700'
+              ws.notice.kind === 'error' ? 'bg-red-50 text-red-700' : 'bg-brand-50 text-brand-700'
             }`}
           >
             {ws.notice.text}
@@ -122,16 +123,12 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
           </div>
         ) : !ws.loading && ws.messages.length === 0 ? (
           <div className="hide-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-10">
-            <div className="al-event-in w-full max-w-[690px]">
-              <div className="mb-8 flex flex-col items-center text-center"><div className="welcome-mark" aria-hidden="true">✳</div><p className="mt-5 text-xs font-semibold uppercase tracking-[.2em] text-indigo-600">AuditLens workspace</p><h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Que souhaitez-vous examiner ?</h2><p className="mt-3 max-w-md text-sm leading-6 text-slate-500">Explorez vos sources autorisées et construisez une investigation fondée sur des preuves.</p></div>
-              <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={async text => { if (ws.activeId) await ws.send(text); else { const title = text.split('\n')[0].slice(0, 80); const thread = await ws.newThread(title); await ws.send(text, thread.id) } }} onCancel={() => void ws.cancel()} />
-              <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">{[
-                ['Auditer un ERP', 'Je souhaite auditer un ERP. Aidez-moi à définir le périmètre et les sources autorisées.'],
-                ['Inspecter une API', 'Je souhaite inspecter une API autorisée. Quelles informations sont nécessaires ?'],
-                ['Analyser une application Web', 'Je souhaite analyser une application Web autorisée. Aidons-nous à définir le périmètre.'],
-                ['Explorer des preuves importées', 'Je souhaite explorer les preuves et fichiers importés disponibles.'],
-              ].map(([label, text]) => <button key={label} type="button" className="suggestion" onClick={() => setDrafts(previous => ({ ...previous, [ws.activeId ?? 'new']: text }))}><span className="mr-2 text-indigo-500">↗</span>{label}</button>)}</div>
-            </div>
+            <WelcomeScreen
+              composer={
+                <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={async text => { if (ws.activeId) await ws.send(text); else { const title = text.split('\n')[0].slice(0, 80); const thread = await ws.newThread(title); await ws.send(text, thread.id) } }} onCancel={() => void ws.cancel()} />
+              }
+              onSuggestion={prompt => setDrafts(previous => ({ ...previous, [ws.activeId ?? 'new']: prompt }))}
+            />
           </div>
         ) : (
           <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onInvestigate={record => { const ids = Object.entries(record).filter(([k]) => k.endsWith("_id") || k === "id").map(([k, v]) => k + "=" + String(v)); const label = ids.length > 0 ? ids.join(', ') : JSON.stringify(record).slice(0, 200); const text = "Investigue cet enregistrement (" + label + ") : verifie sa coherence, confronte-le aux autres preuves collectees et documente toute anomalie avec les preuves correspondantes."; if (ws.activeId) { void ws.send(text) } else { void (async () => { const t = await ws.newThread(text.slice(0, 80)); await ws.send(text, t.id) })() } }} />}</div></div>

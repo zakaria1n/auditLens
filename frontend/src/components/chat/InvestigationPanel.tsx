@@ -36,7 +36,7 @@ function StatusChip({ status }: { status: string }) {
     status === 'completed' || status === 'review_required'
       ? 'bg-emerald-50 text-emerald-700'
       : status === 'running'
-        ? 'bg-indigo-50 text-indigo-600'
+        ? 'bg-brand-50 text-brand-600'
         : status === 'paused'
           ? 'bg-amber-50 text-amber-700'
           : 'bg-slate-100 text-slate-600'
@@ -202,7 +202,7 @@ function RunSection({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-slate-100 px-4 py-3">
         <div className="flex items-center justify-between gap-2">
-          <Link to={`/runs/${runId}`} className="truncate font-mono text-xs font-medium text-indigo-600 hover:underline">
+          <Link to={`/runs/${runId}`} className="truncate font-mono text-xs font-medium text-brand-600 hover:underline">
             {runId}
           </Link>
           <StatusChip status={status} />
@@ -213,8 +213,8 @@ function RunSection({
         <div className="mt-2.5 space-y-2">
           <BudgetBar run={run} events={events} />
         {privacy.length > 0 && (
-          <div className="rounded-xl bg-indigo-50/70 px-3 py-2">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-800">
+          <div className="rounded-xl bg-brand-50/70 px-3 py-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-800">
               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
               </svg>
@@ -226,20 +226,20 @@ function RunSection({
               const cats = (data.categories as { category: string; count: number }[] | undefined) ?? []
               return (
                 <div className="mt-1">
-                  <p className="text-[11px] text-indigo-700">
+                  <p className="text-[11px] text-brand-700">
                     {String(data.provider)}/{String(data.model)} · phase {String(data.phase)} ·{' '}
                     {String(data.total_redactions)} valeur(s) masquée(s) du contexte LLM
                   </p>
                   {cats.length > 0 && (
                     <p className="mt-0.5 flex flex-wrap gap-1">
                       {cats.slice(0, 5).map((c) => (
-                        <span key={c.category} className="rounded bg-white px-1.5 py-0.5 text-[10px] text-indigo-600">
+                        <span key={c.category} className="rounded bg-white px-1.5 py-0.5 text-[10px] text-brand-600">
                           {c.category} ×{c.count}
                         </span>
                       ))}
                     </p>
                   )}
-                  <p className="mt-0.5 text-[10px] leading-snug text-indigo-400">
+                  <p className="mt-0.5 text-[10px] leading-snug text-brand-400">
                     masquage automatique (aide, pas une garantie) ; preuves immuables intactes
                   </p>
                 </div>
@@ -266,7 +266,7 @@ function RunSection({
             </div>
           )}
           {!approvedActiveTests && (
-            <div className="rounded-xl bg-violet-50 px-3 py-2 text-xs leading-relaxed text-violet-700">
+            <div className="rounded-xl bg-brand-50 px-3 py-2 text-xs leading-relaxed text-brand-700">
               Tests actifs non approuvés —{' '}
               <Link to={`/missions/${missionId}`} className="font-semibold underline">
                 approuver sur la page mission
@@ -305,7 +305,7 @@ function RunSection({
             <button
               type="button"
               onClick={() => act(() => extendBudget(missionId, 12, 180), 'Budget étendu')}
-              className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+              className="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100"
             >
               + Budget
             </button>
@@ -400,9 +400,9 @@ function RunSection({
                     key={e.seq}
                     type="button"
                     onClick={() => onOpenEvidence(String(data.id ?? ''), missionId)}
-                    className="w-full rounded-xl bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-violet-50"
+                    className="w-full rounded-xl bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
                   >
-                    <p className="truncate font-mono text-xs text-violet-700">{String(data.id ?? '')}</p>
+                    <p className="truncate font-mono text-xs text-brand-700">{String(data.id ?? '')}</p>
                     <p className="mt-0.5 truncate text-[13px] text-slate-600">{String(data.title ?? '')}</p>
                     <p className="mt-0.5 text-[11px] text-slate-400">
                       {String(data.type ?? '?')}
@@ -506,7 +506,7 @@ export function InvestigationPanel({
                 <div key={m.id}>
                   <Link
                     to={`/missions/${m.id}`}
-                    className="block truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+                    className="block truncate text-sm font-medium text-slate-800 hover:text-brand-600"
                   >
                     {m.title}
                   </Link>
@@ -524,7 +524,7 @@ export function InvestigationPanel({
               <select
                 value={selectedRun ?? ''}
                 onChange={(e) => setSelectedRun(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-700 focus:border-indigo-300 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-700 focus:border-brand-300 focus:outline-none"
               >
                 {runIds.map((rid) => (
                   <option key={rid} value={rid}>
@@ -585,7 +585,7 @@ export function InvestigationPanel({
           <div className="al-event-in flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
               <p className="text-sm font-semibold text-slate-800">
-                Preuve <code className="font-mono text-xs text-indigo-600">{drawer.evidenceId}</code>
+                Preuve <code className="font-mono text-xs text-brand-600">{drawer.evidenceId}</code>
               </p>
               <button
                 type="button"

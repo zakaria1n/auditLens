@@ -133,7 +133,7 @@ export function HypothesisComparison({
                     <button
                       type="button"
                       onClick={() => onInvestigateAlternative(main.id, alt.id, alt.statement)}
-                      className="font-medium text-indigo-600 hover:underline"
+                      className="font-medium text-brand-600 hover:underline"
                     >
                       Investiguer cette explication
                     </button>
@@ -144,7 +144,7 @@ export function HypothesisComparison({
                   <div className="mt-1 flex flex-wrap gap-1">
                     {alt.evidence_refs.map((ref) => (
                       <button key={ref} type="button" onClick={() => onOpenEvidence(ref, missionId)}
-                        className="rounded bg-violet-50 px-1 py-0.5 font-mono text-[10px] text-violet-700 hover:bg-violet-100">
+                        className="rounded bg-brand-50 px-1 py-0.5 font-mono text-[10px] text-brand-700 hover:bg-brand-100">
                         {ref}
                       </button>
                     ))}

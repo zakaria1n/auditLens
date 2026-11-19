@@ -15,8 +15,8 @@ const toneClasses: Record<BadgeTone, string> = {
   red: 'bg-red-50 text-red-700 border-red-200',
   amber: 'bg-amber-50 text-amber-800 border-amber-200',
   blue: 'bg-blue-50 text-blue-700 border-blue-200',
-  indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  violet: 'bg-violet-50 text-violet-700 border-violet-200',
+  indigo: 'bg-brand-50 text-brand-700 border-brand-200',
+  violet: 'bg-brand-50 text-brand-700 border-brand-200',
 }
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

@@ -33,7 +33,7 @@ export function AppShell() {
       }[location.pathname] ?? 'Vue détaillée'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-surface-2">
       <ThreadSidebar
         threads={ws.threads}
         activeId={ws.activeId}
@@ -97,7 +97,7 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => navigate('/chat')}
-                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50"
               >
                 ← Conversation
               </button>

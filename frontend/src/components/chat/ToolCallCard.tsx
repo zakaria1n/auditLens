@@ -18,7 +18,7 @@ function formatDuration(ms?: number): string | null {
 
 function StatusChip({ status }: { status: string }) {
   const map: Record<string, { cls: string; label: string }> = {
-    running: { cls: 'bg-indigo-50 text-indigo-600', label: 'en cours' },
+    running: { cls: 'bg-brand-50 text-brand-600', label: 'en cours' },
     complete: { cls: 'bg-emerald-50 text-emerald-700', label: 'terminé' },
     error: { cls: 'bg-red-50 text-red-700', label: 'échec' },
   }
@@ -63,7 +63,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
       >
         <span
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-            part.status === 'error' ? 'bg-red-50 text-red-500' : 'bg-indigo-50 text-indigo-500'
+            part.status === 'error' ? 'bg-red-50 text-red-500' : 'bg-brand-50 text-brand-500'
           }`}
         >
           {part.status === 'running' ? (
@@ -108,7 +108,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
           {refs.length > 0 && (
             <p className="mb-2.5 flex flex-wrap gap-1.5">
               {refs.map((r) => (
-                <code key={r} className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700">
+                <code key={r} className="rounded bg-brand-50 px-1.5 py-0.5 font-mono text-[11px] text-brand-700">
                   {r}
                 </code>
               ))}

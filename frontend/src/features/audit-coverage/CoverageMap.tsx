@@ -27,7 +27,7 @@ const STATUS_STYLE: Record<string, { cls: string; label: string }> = {
   assessed_insufficient: { cls: 'bg-amber-50 text-amber-700', label: 'preuves insuffisantes' },
   findings_without_assessment: { cls: 'bg-amber-50 text-amber-700', label: 'constats sans assessment' },
   not_applicable: { cls: 'bg-slate-100 text-slate-500', label: 'non applicable' },
-  needs_review: { cls: 'bg-indigo-50 text-indigo-700', label: 'revue requise' },
+  needs_review: { cls: 'bg-brand-50 text-brand-700', label: 'revue requise' },
   not_tested: { cls: 'bg-slate-100 text-slate-500', label: 'non testé' },
 }
 
@@ -101,7 +101,7 @@ export function CoverageMap({
                     key={ref}
                     type="button"
                     onClick={() => onOpenEvidence?.(ref, missionId)}
-                    className="rounded bg-violet-50 px-1 py-0.5 font-mono text-[10px] text-violet-700 hover:bg-violet-100"
+                    className="rounded bg-brand-50 px-1 py-0.5 font-mono text-[10px] text-brand-700 hover:bg-brand-100"
                   >
                     {ref}
                   </button>

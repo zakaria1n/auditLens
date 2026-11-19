@@ -50,7 +50,7 @@ export function ReportsPage() {
             if (e.key === 'Enter') load(query)
           }}
           placeholder="Rechercher (mission, modèle, id)…"
-          className="w-72 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none"
+          className="w-72 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-300 focus:outline-none"
         />
         <button
           type="button"
@@ -113,14 +113,14 @@ export function ReportsPage() {
                   <button
                     type="button"
                     onClick={() => openInConversation(r.thread_id as string)}
-                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                    className="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100"
                   >
                     Ouvrir la conversation
                   </button>
                 )}
                 <Link
                   to={`/runs/${r.run_id}/report`}
-                  className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                  className="rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
                 >
                   Voir le rapport
                 </Link>

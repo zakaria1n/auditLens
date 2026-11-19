@@ -20,7 +20,7 @@ function ControlCheckbox({
   return (
     <label
       className={`flex cursor-pointer flex-col gap-1.5 rounded-lg border px-4 py-3 transition-colors duration-150 ${
-        checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+        checked ? 'border-brand-300 bg-brand-50' : 'border-slate-200 bg-white hover:bg-slate-50'
       }`}
     >
       <span className="flex items-center gap-2.5">
@@ -28,7 +28,7 @@ function ControlCheckbox({
           type="checkbox"
           checked={checked}
           onChange={onToggle}
-          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-200"
         />
         <span className="text-sm font-semibold text-slate-900">{control.id}</span>
         <span className="text-sm text-slate-600">{control.title}</span>
@@ -174,7 +174,7 @@ export function MissionNewPage() {
                 <p className="text-sm text-slate-500">Chargement…</p>
               ) : sources.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  Aucune source — <span className="text-indigo-600">créez-en une dans Connections</span> d'abord.
+                  Aucune source — <span className="text-brand-600">créez-en une dans Connections</span> d'abord.
                 </p>
               ) : (
                 sources.map((source) => {
@@ -183,14 +183,14 @@ export function MissionNewPage() {
                     <label
                       key={source.id}
                       className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-2.5 transition-colors duration-150 ${
-                        checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'
+                        checked ? 'border-brand-300 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggle(sourceIds, setSourceIds, source.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-200"
                       />
                       <span className="text-sm font-medium text-slate-900">{source.name}</span>
                       <span className="ml-auto text-xs text-slate-400">

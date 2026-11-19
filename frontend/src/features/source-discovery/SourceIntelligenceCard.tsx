@@ -52,8 +52,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Pill({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'indigo' | 'violet' | 'amber' }) {
   const tones: Record<string, string> = {
     slate: 'bg-slate-100 text-slate-600',
-    indigo: 'bg-indigo-50 text-indigo-700',
-    violet: 'bg-violet-50 text-violet-700',
+    indigo: 'bg-brand-50 text-brand-700',
+    violet: 'bg-brand-50 text-brand-700',
     amber: 'bg-amber-50 text-amber-700',
   }
   return <span className={`rounded-md px-1.5 py-0.5 text-[11px] ${tones[tone]}`}>{children}</span>
@@ -75,7 +75,7 @@ export function SourceIntelligenceCard({ intel }: { intel: SourceIntelligence })
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
         aria-expanded={expanded}
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
             <ellipse cx="12" cy="5.5" rx="8" ry="2.8" />
             <path d="M4 5.5v6c0 1.55 3.58 2.8 8 2.8s8-1.25 8-2.8v-6M4 11.5v6c0 1.55 3.58 2.8 8 2.8s8-1.25 8-2.8v-6" />
@@ -121,7 +121,7 @@ export function SourceIntelligenceCard({ intel }: { intel: SourceIntelligence })
               {intel.supported_operations.map((op) => (
                 <Pill key={op.tool} tone="indigo">
                   {op.label ?? op.tool}
-                  {op.scope ? <span className="text-indigo-400"> · {op.scope}</span> : null}
+                  {op.scope ? <span className="text-brand-400"> · {op.scope}</span> : null}
                 </Pill>
               ))}
               {intel.supported_operations.length === 0 && <span className="text-xs text-slate-400">aucune</span>}
@@ -133,7 +133,7 @@ export function SourceIntelligenceCard({ intel }: { intel: SourceIntelligence })
               <ul className="space-y-1">
                 {intel.missing_permissions.map((m) => (
                   <li key={m.tool} className="text-slate-600">
-                    <code className="rounded bg-violet-50 px-1 py-0.5 font-mono text-[11px] text-violet-700">{m.tool}</code>{' '}
+                    <code className="rounded bg-brand-50 px-1 py-0.5 font-mono text-[11px] text-brand-700">{m.tool}</code>{' '}
                     {m.label} — <span className="text-slate-400">{m.reason}</span>
                   </li>
                 ))}
@@ -180,7 +180,7 @@ export function SourceIntelligenceCard({ intel }: { intel: SourceIntelligence })
 
           <a
             href={`/connections`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline"
           >
             Configurer ou tester la connexion →
           </a>

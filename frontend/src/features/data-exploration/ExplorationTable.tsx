@@ -110,11 +110,11 @@ export function ExplorationTable({
               setPage(0)
             }}
             placeholder="Filtrer…"
-            className="w-36 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none"
+            className="w-36 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-300 focus:outline-none"
           />
           <a
             href={`/evidence?focus=${result.source_evidence_id}`}
-            className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700 hover:bg-violet-100"
+            className="rounded-md bg-brand-50 px-1.5 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
             title="Ouvrir la preuve source"
           >
             {result.source_evidence_id}
@@ -176,7 +176,7 @@ export function ExplorationTable({
                       <button
                         type="button"
                         onClick={() => setOpenRow(openRow === globalIdx ? null : globalIdx)}
-                        className="mr-1.5 text-[11px] text-slate-400 hover:text-indigo-600"
+                        className="mr-1.5 text-[11px] text-slate-400 hover:text-brand-600"
                       >
                         {openRow === globalIdx ? 'masquer' : 'détails'}
                       </button>
@@ -184,7 +184,7 @@ export function ExplorationTable({
                         <button
                           type="button"
                           onClick={() => onInvestigate(row)}
-                          className="text-[11px] font-medium text-indigo-600 hover:underline"
+                          className="text-[11px] font-medium text-brand-600 hover:underline"
                         >
                           Investiguer
                         </button>

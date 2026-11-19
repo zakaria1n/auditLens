@@ -20,9 +20,9 @@ export interface ActionPlan {
 
 const STATUS_STYLE: Record<PlanAction['status'], { cls: string; label: string }> = {
   proposed: { cls: 'bg-slate-100 text-slate-600', label: 'proposée' },
-  accepted: { cls: 'bg-indigo-50 text-indigo-700', label: 'acceptée' },
+  accepted: { cls: 'bg-brand-50 text-brand-700', label: 'acceptée' },
   in_progress: { cls: 'bg-amber-50 text-amber-700', label: 'en cours' },
-  ready_to_verify: { cls: 'bg-violet-50 text-violet-700', label: 'prête à vérifier' },
+  ready_to_verify: { cls: 'bg-brand-50 text-brand-700', label: 'prête à vérifier' },
   verified: { cls: 'bg-emerald-50 text-emerald-700', label: 'vérifiée' },
   not_verified: { cls: 'bg-red-50 text-red-700', label: 'non vérifiée' },
 }
@@ -126,7 +126,7 @@ export function ActionPlanView({
                     key={ref}
                     type="button"
                     onClick={() => onOpenEvidence?.(ref, missionId)}
-                    className="rounded bg-violet-50 px-1 py-0.5 font-mono text-[10px] text-violet-700 hover:bg-violet-100"
+                    className="rounded bg-brand-50 px-1 py-0.5 font-mono text-[10px] text-brand-700 hover:bg-brand-100"
                   >
                     {ref}
                   </button>
@@ -141,7 +141,7 @@ export function ActionPlanView({
                     type="button"
                     disabled={busy}
                     onClick={() => void doTransition(a.id, next)}
-                    className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"
+                    className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
                   >
                     → {STATUS_STYLE[next].label}
                   </button>

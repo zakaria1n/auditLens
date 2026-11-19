@@ -41,7 +41,7 @@ export function RunIndexPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link
                       to={`/runs/${run.id}`}
-                      className="font-mono text-sm font-semibold text-slate-900 hover:text-indigo-700"
+                      className="font-mono text-sm font-semibold text-slate-900 hover:text-brand-700"
                     >
                       {run.id}
                     </Link>
@@ -50,7 +50,7 @@ export function RunIndexPage() {
                       {!TERMINAL.has(run.status) && run.status !== 'not_started' ? (
                         <Link
                           to={`/runs/${run.id}`}
-                          className="text-xs font-medium text-indigo-600 hover:underline"
+                          className="text-xs font-medium text-brand-600 hover:underline"
                         >
                           Suivre en direct →
                         </Link>

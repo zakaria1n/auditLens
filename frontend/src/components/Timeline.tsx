@@ -16,8 +16,8 @@ const dotTones: Record<TimelineItem['tone'], string> = {
   red: 'bg-red-500 text-white',
   amber: 'bg-amber-500 text-white',
   neutral: 'bg-slate-300 text-slate-600',
-  indigo: 'bg-indigo-500 text-white',
-  violet: 'bg-violet-500 text-white',
+  indigo: 'bg-brand-500 text-white',
+  violet: 'bg-brand-500 text-white',
 }
 
 /**

@@ -54,7 +54,7 @@ export function AssessmentCard({ assessment }: AssessmentCardProps) {
               <Link
                 key={evId}
                 to={`/evidence?run_id=${assessment.run_id}&focus=${evId}`}
-                className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-mono text-xs text-indigo-700 transition-colors duration-150 hover:bg-indigo-100"
+                className="rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 font-mono text-xs text-brand-700 transition-colors duration-150 hover:bg-brand-100"
               >
                 {evId}
               </Link>

@@ -94,7 +94,7 @@ export function CorrelationGraph({ result }: { result: CorrelationResult }) {
         </p>
         <a
           href={`/evidence?focus=${result.left.evidence_id}`}
-          className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700 hover:bg-violet-100"
+          className="rounded-md bg-brand-50 px-1.5 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
           title="Preuve de corrélation"
         >
           corrélation
@@ -167,7 +167,7 @@ export function CorrelationGraph({ result }: { result: CorrelationResult }) {
             <div className="flex items-center gap-2">
               <a
                 href={`/evidence?focus=${selected.evidence_id}`}
-                className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] text-violet-700 hover:bg-violet-100"
+                className="rounded-md bg-brand-50 px-1.5 py-0.5 font-mono text-[11px] text-brand-700 hover:bg-brand-100"
               >
                 preuve {selected.evidence_id}
               </a>
