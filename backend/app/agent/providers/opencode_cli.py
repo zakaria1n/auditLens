@@ -52,7 +52,7 @@ def _extract_first_json(text: str) -> dict[str, Any] | None:
 class OpenCodeCliProvider(LLMProvider):
     provider_id = "opencode-cli"
 
-    def __init__(self, model: str = "deepseek-v4.1-flash-free", timeout_s: int = 150):
+    def __init__(self, model: str = "deepseek-v4.1-flash-free", timeout_s: int = 300):
         self._argv_prefix = self._resolve_executable()
         if self._argv_prefix is None:
             raise ProviderError(
