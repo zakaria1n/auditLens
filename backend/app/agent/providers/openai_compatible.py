@@ -83,6 +83,7 @@ class OpenAICompatibleProvider(LLMProvider):
                         {
                             "id": c["id"], "type": "function",
                             "function": {"name": c["name"], "arguments": json.dumps(c.get("arguments", {}))},
+                            **({"extra_content": c["extra_content"]} if self.provider_id == "gemini" and c.get("extra_content") else {}),
                         }
                         for c in calls
                     ]
@@ -125,7 +126,8 @@ class OpenAICompatibleProvider(LLMProvider):
                 arguments = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 arguments = {}
-            tool_calls.append({"id": tc.id or f"call_{len(tool_calls)}", "name": tc.function.name, "arguments": arguments})
+            tool_calls.append({"id": tc.id or f"call_{len(tool_calls)}", "name": tc.function.name, "arguments": arguments,
+                               "extra_content": getattr(tc, "extra_content", None) if self.provider_id == "gemini" else None})
         usage: dict[str, int] | None = None
         raw_usage = getattr(resp, "usage", None)
         if raw_usage is not None:
@@ -143,7 +145,7 @@ class OpenAICompatibleProvider(LLMProvider):
         if tools:
             kwargs["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in tools]
         content: list[str] = []
-        calls: dict[int, dict[str, str]] = {}
+        calls: dict[int, dict[str, Any]] = {}
         stream = None
         try:
             stream = await self._client.chat.completions.create(**kwargs)
@@ -156,6 +158,9 @@ class OpenAICompatibleProvider(LLMProvider):
                     yield delta.content
                 for tc in delta.tool_calls or []:
                     call = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                    extra = getattr(tc, "extra_content", None)
+                    if self.provider_id == "gemini" and isinstance(extra, dict):
+                        call["extra_content"] = extra
                     if tc.id:
                         call["id"] += tc.id
                     if tc.function:
@@ -171,7 +176,8 @@ class OpenAICompatibleProvider(LLMProvider):
                     raise ProviderError(f"Arguments d'outil invalides: {exc}") from exc
                 if not call["name"]:
                     raise ProviderError("Nom d'outil manquant dans le flux provider")
-                tool_calls.append({"id": call["id"] or f"call_{index}", "name": call["name"], "arguments": arguments})
+                tool_calls.append({"id": call["id"] or f"call_{index}", "name": call["name"], "arguments": arguments,
+                                   "extra_content": call.get("extra_content")})
             yield LLMResponse(content="".join(content) or None, tool_calls=tool_calls,
                               input_chars=len(system) + sum(len(str(m.get("content", ""))) for m in messages))
         except ProviderError:
@@ -187,8 +193,23 @@ class OpenAICompatibleProvider(LLMProvider):
         corps de réponse (la raison RÉELLE du 400/404 — ex. INVALID_ARGUMENT
         Google), endpoint appelé sur 404 (un base_url hérité d'un autre
         provider produit un endpoint faux, vu en test réel gemini)."""
-        base = f"{self.provider_id}/{self.model_id}: {type(exc).__name__}: {exc}"
         text = str(exc)
+        # Do not echo a provider's request/response body: it can contain private content.
+        if self.provider_id == "gemini" and (getattr(exc, "status_code", None) == 400 or "BadRequestError" in type(exc).__name__):
+            response = getattr(exc, "response", None)
+            lower = (text + " " + str(getattr(response, "text", "") or "")).lower()
+            if "thought_signature" in lower or "thought signature" in lower:
+                reason = "signature de raisonnement d'un appel d'outil invalide ou absente"
+            elif "tools use is not enabled for this model" in lower:
+                reason = "Tools use is not enabled for this model : ce modèle ne prend pas en charge les outils"
+            elif "tool" in lower or "function" in lower:
+                reason = "format d'appel d'outil ou schéma refusé"
+            elif "model" in lower:
+                reason = "modèle ou fonctionnalité incompatible avec la requête"
+            else:
+                reason = "format de requête refusé (cause précise non confirmée)"
+            return f"Gemini/{self.model_id}: HTTP 400 — {reason}. Vérifiez le modèle et réessayez après correction."
+        base = f"{self.provider_id}/{self.model_id}: {type(exc).__name__}: {exc}"
         # corps de la réponse HTTP : souvent la seule information exploitable
         # (ex. Google renvoie {"error":{"message":"…","status":"INVALID_ARGUMENT"}})
         response = getattr(exc, "response", None)

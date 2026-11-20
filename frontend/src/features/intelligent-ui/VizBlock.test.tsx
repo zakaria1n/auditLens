@@ -11,6 +11,15 @@ const barSpec = JSON.stringify({
 })
 
 describe('VizBlock — rendu sûr', () => {
+  it.each([['RL', 'flex-row-reverse', 'rotate-180'], ['BT', 'flex-col-reverse', '-rotate-90']])(
+    'affiche %s dans le bon sens', (direction, axis, arrow) => {
+      const { container } = render(<VizBlock raw={{ version: 1, type: 'process_diagram', title: 'Processus', direction,
+        steps: [{ id: 'a', label: 'Début' }, { id: 'b', label: 'Fin' }] }} />)
+      expect(container.querySelector('ol')).toHaveClass(axis)
+      expect(container.querySelector('li span')).toHaveClass(arrow)
+      expect(screen.queryByText(/Présentation non supportée/i)).not.toBeInTheDocument()
+    },
+  )
   it('rend une spécification valide via le registre approuvé', () => {
     render(<VizBlock raw={JSON.parse(barSpec)} />)
     expect(screen.getByText('Commandé vs livré')).toBeInTheDocument()

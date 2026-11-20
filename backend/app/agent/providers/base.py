@@ -18,6 +18,8 @@ class ProviderToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    # Opaque provider metadata for continuing this tool-call turn; never shown to users.
+    extra_content: dict[str, Any] | None = None
 
 
 class LLMResponse(BaseModel):

@@ -388,18 +388,21 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
 // ----------------------------------------------------------- process_diagram
 
 export function ProcessDiagramViz({ spec, callbacks }: { spec: ProcessDiagramSpec; callbacks?: VizCallbacks }) {
-  const vertical = spec.direction === 'vertical'
+  const vertical = spec.direction === 'vertical' || spec.direction === 'bottom-to-top'
+  const reverse = spec.direction === 'right-to-left' || spec.direction === 'bottom-to-top'
+  const axis = vertical ? (reverse ? 'flex-col-reverse' : 'flex-col') : (reverse ? 'flex-row-reverse' : 'flex-row')
+  const arrow = vertical ? (reverse ? '-rotate-90' : 'rotate-90') : (reverse ? 'rotate-180' : '')
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
-      <ol className={`flex ${vertical ? 'flex-col' : 'flex-row overflow-x-auto'} items-stretch gap-0`}>
+      <ol className={`flex ${axis} ${vertical ? '' : 'overflow-x-auto'} items-stretch gap-0`}>
         {spec.steps.map((step, i) => (
-          <li key={step.id} className={`flex ${vertical ? 'flex-col' : 'flex-row'} items-center`}>
+          <li key={step.id} className={`flex ${axis} items-center`}>
             <div className="min-w-[130px] max-w-[190px] rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2">
               <p className="text-[12px] font-semibold text-ink-700">{step.label}</p>
               {step.detail && <p className="mt-0.5 text-[10.5px] leading-snug text-ink-400">{step.detail}</p>}
             </div>
             {i < spec.steps.length - 1 && (
-              <span className={`mx-1.5 text-brand-400 ${vertical ? 'rotate-90' : ''}`} aria-hidden="true">
+              <span className={`mx-1.5 text-brand-400 ${arrow}`} aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
               </span>
             )}

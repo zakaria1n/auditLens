@@ -4,6 +4,24 @@ import { validateVizSpec, specToText, VIZ_TYPES } from './viz'
 
 const base = { version: 1, title: 'Test' }
 
+describe('directions des diagrammes', () => {
+  const diagram = { ...base, type: 'process_diagram', steps: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }
+  it.each([
+    ['LR', 'horizontal'], ['left-to-right', 'horizontal'], ['horizontal', 'horizontal'],
+    ['TB', 'vertical'], ['TD', 'vertical'], ['top-to-bottom', 'vertical'], ['vertical', 'vertical'],
+    ['RL', 'right-to-left'], ['right-to-left', 'right-to-left'],
+    ['BT', 'bottom-to-top'], ['bottom-to-top', 'bottom-to-top'],
+  ])('normalise %s sans inverser le sens', (input, expected) => {
+    const result = validateVizSpec({ ...diagram, direction: input })
+    expect(result.ok && result.spec.type === 'process_diagram' && result.spec.direction).toBe(expected)
+  })
+  it('utilise une valeur par défaut et refuse une direction inconnue', () => {
+    const result = validateVizSpec(diagram)
+    expect(result.ok && result.spec.type === 'process_diagram' && result.spec.direction).toBe('horizontal')
+    expect(validateVizSpec({ ...diagram, direction: 'diagonal' }).ok).toBe(false)
+  })
+})
+
 describe('validateVizSpec — acceptation', () => {
   it('accepte une data_table conforme', () => {
     const r = validateVizSpec({

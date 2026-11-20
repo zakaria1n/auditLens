@@ -97,7 +97,7 @@ type id_field = string
 export interface ProcessDiagramSpec extends VizBase {
   type: 'process_diagram'
   steps: Array<{ id: string; label: string; detail?: string }>
-  direction?: 'horizontal' | 'vertical'
+  direction?: 'horizontal' | 'vertical' | 'right-to-left' | 'bottom-to-top'
 }
 
 export type TimelineEventKind = 'tool' | 'evidence' | 'hypothesis' | 'decision' | 'run' | 'other'
@@ -314,10 +314,16 @@ function validateProcessDiagram(raw: Record<string, unknown>): VizValidation {
     if (typeof step.label !== 'string' || !step.label.trim()) return fail('libellé d’étape requis')
     if (Object.keys(step).some((k) => !['id', 'label', 'detail'].includes(k))) return fail('clés d’étape inconnues')
   }
-  if (raw.direction !== undefined && !['horizontal', 'vertical'].includes(raw.direction as string)) {
-    return fail('direction limitée à horizontal|vertical')
+  const aliases: Record<string, ProcessDiagramSpec['direction']> = {
+    lr: 'horizontal', 'left-to-right': 'horizontal', horizontal: 'horizontal',
+    tb: 'vertical', td: 'vertical', 'top-to-bottom': 'vertical', vertical: 'vertical',
+    rl: 'right-to-left', 'right-to-left': 'right-to-left',
+    bt: 'bottom-to-top', 'bottom-to-top': 'bottom-to-top',
   }
-  return { ok: true, spec: raw as unknown as ProcessDiagramSpec }
+  const direction = raw.direction === undefined ? 'horizontal'
+    : typeof raw.direction === 'string' ? aliases[raw.direction.trim().toLowerCase()] : undefined
+  if (!direction) return fail('direction attendue : LR, TB, TD, RL ou BT')
+  return { ok: true, spec: { ...raw, direction } as unknown as ProcessDiagramSpec }
 }
 
 const TIMELINE_KINDS: readonly string[] = ['tool', 'evidence', 'hypothesis', 'decision', 'run', 'other']
