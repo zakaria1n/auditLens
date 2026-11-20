@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from ...agent.providers import build_provider, resolve_llm_config
-from ...agent.providers.openai_compatible import ZEN_CATALOG_URL, ZEN_USER_AGENT
+from ...agent.providers.openai_compatible import DEFAULT_BASE_URLS, ZEN_CATALOG_URL, ZEN_USER_AGENT
 from ...core.errors import ProviderError
 from ..deps import deps
 
@@ -159,37 +159,50 @@ async def list_opencode_free_models(api_key: str | None = None):
 # vérifiées à jour en novembre 2026. Ce NE SONT PAS des listes exhaustives :
 # l'utilisateur peut toujours saisir librement un identifiant de modèle plus récent.
 CURATED_MODELS: dict[str, list[dict]] = {
+    # vérifié web nov. 2026 : la famille GPT-5 fonctionne en Chat Completions avec
+    # tools ; les GPT-6.2 exigent l'API Responses pour le tool calling (exclus —
+    # notre harness est Chat Completions) ; la famille 4.1 reste disponible
     "openai": [
-        {"id": "gpt-4.1-mini", "name": "GPT-4.1 mini — rapide, bon rapport qualité/prix"},
-        {"id": "gpt-4.1", "name": "GPT-4.1 — qualité maximale"},
-        {"id": "gpt-4.1-nano", "name": "GPT-4.1 nano — le plus économique"},
-        {"id": "gpt-4o-mini", "name": "GPT-4o mini"},
-        {"id": "gpt-4o", "name": "GPT-4o"},
+        {"id": "gpt-5-chat-latest", "name": "GPT-5 Chat — recommandé (Chat Completions + tools)"},
+        {"id": "gpt-5-mini", "name": "GPT-5 mini — économique"},
+        {"id": "gpt-5", "name": "GPT-5"},
+        {"id": "gpt-4.1-mini", "name": "GPT-4.1 mini — génération précédente, toujours disponible"},
+        {"id": "gpt-4.1", "name": "GPT-4.1 — génération précédente"},
     ],
+    # vérifié web nov. 2026 (docs platform.claude.com) : génération Opus 4.6 /
+    # Sonnet 5 / Sonnet 4.6 ; les IDs exacts de votre compte viennent du listing LIVE
     "anthropic": [
-        {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5 — recommandé (outils fiables)"},
+        {"id": "claude-opus-4-6", "name": "Claude Opus 4.6 — raisonnement profond (outils natifs)"},
+        {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 — équilibre qualité/prix"},
+        {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 — génération précédente"},
         {"id": "claude-haiku-4-5", "name": "Claude Haiku 4.5 — rapide et économique"},
-        {"id": "claude-opus-4-1", "name": "Claude Opus 4.1 — raisonnement profond"},
-        {"id": "claude-3-5-haiku-latest", "name": "Claude 3.5 Haiku"},
     ],
+    # vérifié web nov. 2026 : alias STABLES (deepseek-chat/reasoner pointent toujours
+    # vers le dernier modèle V3.x/V4) ; deepseek-flash est le nouvel alias récent
     "deepseek": [
-        {"id": "deepseek-chat", "name": "DeepSeek Chat (V3) — outil de chat principal"},
-        {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner (R) — raisonnement étendu"},
+        {"id": "deepseek-chat", "name": "DeepSeek Chat — alias stable (dernier modèle non-reasoning)"},
+        {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner — alias stable (raisonnement étendu)"},
+        {"id": "deepseek-flash", "name": "DeepSeek Flash — nouvel alias rapide"},
     ],
+    # vérifié web nov. 2026 (Google AI Studio + retour utilisateur) : la génération
+    # 4 (hydrogen/neon/carbon) remplace la 3.8 ; les anciens 2.5-flash/2.5-pro/2.0-flash
+    # renvoyaient 404/400 sur l'API actuelle
     "gemini": [
-        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash — rapide, recommandé"},
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro — qualité maximale"},
-        {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite — économique"},
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash"},
+        {"id": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen — recommandé (remplace 3.8 Flash)"},
+        {"id": "gemini-4-carbon", "name": "Gemini 4 Carbon — puissance maximale"},
+        {"id": "gemini-4-neon", "name": "Gemini 4 Neon — thinking levels (tier payant)"},
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash — génération précédente"},
+        {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite — économique"},
+        {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite — encore actif"},
     ],
     "mock": [{"id": "mock-scripted-v1", "name": "MockLLM scripté — tests sans clé ni réseau"}],
 }
 
 CURATED_NOTES: dict[str, str] = {
-    "openai": "Suggestions plateformes OpenAI (nov. 2026). Tout modèle récent supportant les tool calls peut être saisi manuellement.",
-    "anthropic": "Suggestions Anthropic (nov. 2026) via l'API Messages. Tout modèle récent supportant les outils peut être saisi manuellement.",
-    "deepseek": "Suggestions DeepSeek API (nov. 2026). Les identifiants réels dépendent du compte.",
-    "gemini": "Suggestions Google AI (nov. 2026) via l'API compatible OpenAI. Tout modèle récent peut être saisi.",
+    "openai": "Suggestions OpenAI vérifiées web (nov. 2026) — limitées aux modèles Chat Completions + tool calls (les GPT-6.2 exigent l'API Responses). Avec une clé, la liste LIVE de votre clé fait foi.",
+    "anthropic": "Suggestions Anthropic (nov. 2026). Avec une clé configurée, la liste LIVE de votre clé est récupérée automatiquement.",
+    "deepseek": "Suggestions DeepSeek API (nov. 2026). Avec une clé configurée, la liste LIVE de votre compte est récupérée automatiquement.",
+    "gemini": "Identifiants vérifiés via Google AI Studio (nov. 2026). Avec une clé configurée, la liste LIVE de votre clé est récupérée automatiquement — c'est la référence absolue.",
     "mock": "Provider de test : aucun appel réseau.",
     "compatible": "Endpoint compatible OpenAI générique (base_url requis) : la liste dépend du serveur — saisissez l'identifiant exact du modèle (ex. glm-5.3-flash sur Z.AI, llama3.1 sur Ollama local).",
     "opencode": "Catalogue dynamique : la liste live des modèles gratuits est récupérée via /api/settings/llm/opencode/models.",
@@ -197,17 +210,81 @@ CURATED_NOTES: dict[str, str] = {
 }
 
 
+NON_CHAT_MODEL_HINTS = ("embedding", "whisper", "tts", "dall-e", "moderation", "realtime", "audio", "transcribe")
+
+
+async def _list_models_live(provider: str, api_key: str, base_url: str | None = None) -> list[dict]:
+    """Liste LIVE des modèles exposés par le provider pour CETTE clé (source de
+    vérité absolue — les catalogues statiques vieillissent). Filtre grossier des
+    modèles non-chat ; un modèle absent ici ne peut pas être appelé."""
+    if provider == "anthropic":
+        import anthropic
+
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+        try:
+            page = await client.models.list(limit=100)
+            return [{"id": m.id, "name": getattr(m, "display_name", None) or m.id} for m in page.data]
+        finally:
+            await client.close()
+    from openai import AsyncOpenAI
+
+    kwargs: dict = {"api_key": api_key, "timeout": 20.0}
+    url = base_url or DEFAULT_BASE_URLS.get(provider)
+    if url:
+        kwargs["base_url"] = url
+    client = AsyncOpenAI(**kwargs)
+    try:
+        page = await client.models.list()
+        out = []
+        for m in page.data:
+            mid = str(m.id)
+            if any(h in mid.lower() for h in NON_CHAT_MODEL_HINTS):
+                continue
+            out.append({"id": mid, "name": getattr(m, "display_name", None) or mid})
+        return out
+    finally:
+        await client.close()
+
+
 @router.get("/models")
-async def list_provider_models(provider: str):
-    """Modèles SUGGÉRÉS pour un provider (choix facilité dans l'UI). Source
-    « curated » = liste statique vérifiée (nov. 2026) ; « none » = saisie libre
-    avec explication. Jamais exhaustive : la saisie manuelle reste possible."""
+async def list_provider_models(request: Request, provider: str, api_key: str | None = None, base_url: str | None = None):
+    """Modèles pour un provider (choix facilité dans l'UI).
+
+    Stratégie : LIVE d'abord — la liste réelle exposée par le provider pour
+    cette clé (clé fournie par l'UI, sinon clé runtime du même provider ;
+    jamais renvoyée ni journalisée). Repli : liste statique vérifiée
+    (« curated », nov. 2026) + warning explicite. « none » = saisie libre
+    expliquée (compatible dépend du base_url, opencode = catalogue Zen dédié).
+    """
     if provider not in CURATED_NOTES:
         raise HTTPException(400, f"provider inconnu : {provider}")
+    d = deps(request)
+    cfg = resolve_llm_config(d.llm_runtime)
+    key = api_key or (cfg.get("api_key") or "" if cfg.get("provider") == provider else "")
+    live_base = base_url or (cfg.get("base_url") if cfg.get("provider") == provider else None)
+    liveable = provider in ("openai", "anthropic", "deepseek", "gemini") and bool(key)
+    if provider == "compatible" and key and live_base:
+        liveable = True  # sans base_url, /models n'a aucun sens sur un générique
+    if liveable:
+        try:
+            models = await _list_models_live(provider, key, live_base)
+            if models:
+                return {
+                    "ok": True, "provider": provider, "source": "live",
+                    "models": models, "note": CURATED_NOTES[provider],
+                    "detail": "liste LIVE exposée par le provider pour cette clé — référence absolue",
+                }
+        except Exception as exc:  # noqa: BLE001 — repli honnête, la raison est affichée
+            live_warning = f"liste live indisponible ({type(exc).__name__}) — suggestions statiques affichées"
+        else:
+            live_warning = "liste live vide pour cette clé — suggestions statiques affichées"
+    else:
+        live_warning = None
     return {
         "ok": True,
         "provider": provider,
         "source": "curated" if provider in CURATED_MODELS else "none",
         "models": CURATED_MODELS.get(provider, []),
         "note": CURATED_NOTES[provider],
+        **({"warning": live_warning} if live_warning else {}),
     }

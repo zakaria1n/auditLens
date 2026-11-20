@@ -183,12 +183,35 @@ class OpenAICompatibleProvider(LLMProvider):
                 await stream.close()
 
     def _friendly_error(self, exc: Exception) -> str:
-        """Traduit les erreurs provider en messages actionnables (ex. quota Zen)."""
+        """Traduit les erreurs provider en messages actionnables : quota Zen,
+        corps de réponse (la raison RÉELLE du 400/404 — ex. INVALID_ARGUMENT
+        Google), endpoint appelé sur 404 (un base_url hérité d'un autre
+        provider produit un endpoint faux, vu en test réel gemini)."""
         base = f"{self.provider_id}/{self.model_id}: {type(exc).__name__}: {exc}"
         text = str(exc)
+        # corps de la réponse HTTP : souvent la seule information exploitable
+        # (ex. Google renvoie {"error":{"message":"…","status":"INVALID_ARGUMENT"}})
+        response = getattr(exc, "response", None)
+        if response is not None and not text.strip("Error code: 0123456789 "):
+            try:
+                body = str(getattr(response, "text", "") or "").strip()
+            except Exception:  # noqa: BLE001 — le corps est un bonus, jamais une erreur
+                body = ""
+            if body:
+                base = f"{base} — {body[:400]}"
         for marker, hint in ZEN_ERROR_HINTS.items():
             if marker in text:
                 return f"{base} — {hint}"
+        request = getattr(exc, "request", None)
+        url = str(getattr(request, "url", "") or "")
+        if url and ("404" in text or "NotFound" in type(exc).__name__):
+            base = f"{base} — endpoint appelé : {url}"
+            expected = DEFAULT_BASE_URLS.get(self.provider_id)
+            if expected and not url.startswith(expected.rstrip("/")):
+                base += (f" — base_url attendue pour {self.provider_id} : {expected}"
+                         " (une base_url héritée d'un autre provider ?)")
+            elif self.provider_id == "openai":
+                base += " — vérifiez l'identifiant du modèle (404 = modèle inexistant pour cette clé)"
         return base
 
     async def close(self) -> None:

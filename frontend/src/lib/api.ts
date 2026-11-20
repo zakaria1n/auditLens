@@ -221,12 +221,17 @@ export interface ProviderModel {
   name: string
 }
 
-/** Modèles SUGGÉRÉS pour un provider (liste statique vérifiée) — saisie
- * manuelle toujours possible. source: 'curated' | 'none'. */
-export function listProviderModels(provider: string) {
-  return request<{ ok: boolean; provider: string; source: string; models: ProviderModel[]; note: string }>(
-    `/api/settings/llm/models?provider=${encodeURIComponent(provider)}`,
-  )
+/** Modèles pour un provider : LIVE depuis l'API du provider quand une clé
+ * est disponible (référence absolue), sinon suggestions statiques vérifiées.
+ * source: 'live' | 'curated' | 'none' ; warning présent si le live a échoué. */
+export function listProviderModels(provider: string, apiKey?: string, baseUrl?: string | null) {
+  const params = new URLSearchParams({ provider })
+  if (apiKey) params.set('api_key', apiKey)
+  if (baseUrl) params.set('base_url', baseUrl)
+  return request<{
+    ok: boolean; provider: string; source: string
+    models: ProviderModel[]; note: string; warning?: string; detail?: string
+  }>(`/api/settings/llm/models?${params.toString()}`)
 }
 
 export function listReports(q?: string) {

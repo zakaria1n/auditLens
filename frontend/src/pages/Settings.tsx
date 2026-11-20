@@ -24,6 +24,8 @@ export function SettingsPage() {
   const [ocError, setOcError] = useState<string | null>(null)
   const [curated, setCurated] = useState<ProviderModel[] | null>(null)
   const [curatedNote, setCuratedNote] = useState<string>('')
+  const [modelSource, setModelSource] = useState<'live' | 'curated' | 'none' | null>(null)
+  const [modelWarning, setModelWarning] = useState<string | null>(null)
   const [forceCustom, setForceCustom] = useState(false)
 
   // Pré-remplissage depuis la config réelle du backend (jamais la clé).
@@ -60,26 +62,41 @@ export function SettingsPage() {
     }
   }, [provider])
 
-  // catalogues SUGGÉRÉS (statiques vérifiés) pour les providers à liste connue
+  // base_url est propre à « compatible » : NE JAMAIS la transmettre à un autre
+  // provider (fuite de l'URL saisie précédemment -> endpoint faux -> 404, bug vu en test réel)
+  useEffect(() => {
+    setBaseUrl('')
+    setApiKey('')
+  }, [provider])
+
+  // catalogue des modèles : LIVE (clé saisie ou runtime) sinon suggestions
+  // statiques vérifiées — recharge avec 600 ms de debounce quand la clé change
   useEffect(() => {
     setCurated(null)
     setCuratedNote('')
+    setModelSource(null)
+    setModelWarning(null)
     setForceCustom(false)
     if (!['openai', 'anthropic', 'deepseek', 'gemini'].includes(provider)) return
     let cancelled = false
-    listProviderModels(provider)
-      .then((res) => {
-        if (cancelled) return
-        setCurated(res.models)
-        setCuratedNote(res.note)
-      })
-      .catch(() => {
-        if (!cancelled) setCurated([])
-      })
+    const timer = window.setTimeout(() => {
+      listProviderModels(provider, apiKey.trim() || undefined, baseUrl.trim() || undefined)
+        .then((res) => {
+          if (cancelled) return
+          setCurated(res.models)
+          setCuratedNote(res.note)
+          setModelSource(res.source as 'live' | 'curated' | 'none')
+          setModelWarning(res.warning ?? null)
+        })
+        .catch(() => {
+          if (!cancelled) setCurated([])
+        })
+    }, apiKey ? 600 : 0)
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
-  }, [provider])
+  }, [provider, apiKey, baseUrl])
 
   const keyConfigured = provider === serverConfig?.provider && (serverConfig?.key_configured ?? false)
   const providers = serverConfig?.providers_available ?? ['mock', 'opencode', 'opencode-cli', 'openai', 'gemini', 'anthropic', 'deepseek', 'compatible']
@@ -231,7 +248,12 @@ export function SettingsPage() {
                       aria-label="Identifiant du modèle personnalisé"
                     />
                   ) : null}
-                  <p className="text-[11px] leading-snug text-slate-400">{curatedNote}</p>
+                  <p className="text-[11px] leading-snug text-slate-400">
+                    <span className={`mr-1.5 rounded px-1.5 py-0.5 font-medium ${modelSource === 'live' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {modelSource === 'live' ? 'liste live (votre clé)' : modelSource === 'curated' ? 'suggestions' : '—'}
+                    </span>
+                    {modelWarning ? modelWarning : curatedNote}
+                  </p>
                 </div>
               ) : provider === 'compatible' ? (
                 <div className="flex flex-col gap-1.5">
