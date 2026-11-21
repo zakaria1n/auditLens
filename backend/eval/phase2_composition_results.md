@@ -21,3 +21,9 @@ are not included here. OpenCode CLI produces a completed response rather than
 true token streaming; its free model availability is controlled by OpenCode.
 These results do not establish reliability for other providers or visual quality
 in a browser. Evidence-backed compositions are not supported in this phase.
+
+Additional check on the user's restarted backend: Gemini
+`gemini-2.5-flash-lite`, commit `2020548beb3c`, prompt version and SHA-256 as
+above, using the Agent Harness diagram prompt. The provider returned HTTP 404,
+stating that model is no longer available to new users. No composition was
+produced; this is a provider/model availability failure, not a renderer success.
