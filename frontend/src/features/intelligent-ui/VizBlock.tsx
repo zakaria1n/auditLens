@@ -2,6 +2,8 @@ import { Component, memo } from 'react'
 import type { ReactNode } from 'react'
 
 import { validateVizSpec, type VizSpec } from './schemas/viz'
+import { validateComposition } from './schemas/composition'
+import { Composition } from './renderers/Composition'
 import type { VizCallbacks } from './renderers'
 import {
   BarChartViz, ComparisonViz, DataTableViz, KpiSummaryViz, LineChartViz,
@@ -61,6 +63,11 @@ class VizErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
  * jamais d'exécution de contenu non approuvé).
  */
 function VizBlockInner({ raw, callbacks }: { raw: unknown; callbacks?: VizCallbacks }) {
+  if (typeof raw === 'object' && raw !== null && 'version' in raw && raw.version === 2) {
+    const result = validateComposition(raw)
+    if (!result.ok) return <div className="my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Cette présentation ne peut pas être affichée. La réponse textuelle reste disponible.<details><summary>Détails techniques</summary>{result.reason}</details></div>
+    return <VizErrorBoundary><Composition spec={result.spec} renderVisualization={spec => renderViz(spec, callbacks)} /></VizErrorBoundary>
+  }
   const result = validateVizSpec(raw)
   if (!result.ok) {
     return (
