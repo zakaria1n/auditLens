@@ -63,6 +63,18 @@ from .providers.base import LLMProvider
 BUDGET_WARN_RATIO = 0.8  # avertissement à 80 % de consommation d'une ressource
 
 
+def _sanitize_evidence_summaries(evidence: list[Evidence]) -> tuple[list[dict], dict, dict]:
+    """Keep repository-owned references intact while masking all evidence content."""
+    summaries = summarize_evidence_for_llm(evidence)
+    content = [{k: v for k, v in item.items() if k not in ("id", "source_id")} for item in summaries]
+    exposure = classify_exposure(content)
+    cleaned, counts = sanitize_context(content)
+    for item, original in zip(cleaned, summaries, strict=True):
+        item["id"] = original["id"]
+        item["source_id"] = original["source_id"]
+    return cleaned, counts, exposure
+
+
 def _investigation_enabled() -> bool:
     """Interrupteur de la boucle agentique (défaut : activée).
 
@@ -280,9 +292,7 @@ class RunOrchestrator:
             # Index complet de la mission : un constat peut citer une preuve initiale (import)
             # comme une preuve du run — l'appartenance mission est l'invariant docs/14.
             final_evidence = await self.repo.list_evidence(mission_id=mission.id)
-            evidence_summaries_raw = summarize_evidence_for_llm(final_evidence)
-            detected = classify_exposure(evidence_summaries_raw)
-            evidence_summaries_final, findings_redactions = sanitize_context(evidence_summaries_raw)
+            evidence_summaries_final, findings_redactions, detected = _sanitize_evidence_summaries(final_evidence)
             await self.bus.publish(run.id, "privacy_preview", {
                 "provider": provider.provider_id, "model": provider.model_id,
                 "categories": detected["categories"],
@@ -559,11 +569,9 @@ class RunOrchestrator:
             evidence_now = await self.repo.list_evidence(mission_id=mission.id)
             remaining_calls = budget.max_tool_calls - budget.used_calls
             budget_warnings = budget.warnings()
-            evidence_summaries_raw = summarize_evidence_for_llm(evidence_now)
             # Phase 7/10 + stabilisation : détection AVANT masquage (categories), puis
             # masquage EFFECTIF du contexte parti au LLM (les preuves restent intactes)
-            detected = classify_exposure(evidence_summaries_raw)
-            evidence_summaries_now, redaction_counts = sanitize_context(evidence_summaries_raw)
+            evidence_summaries_now, redaction_counts, detected = _sanitize_evidence_summaries(evidence_now)
             total_redactions = sum(redaction_counts.values())
             await self.bus.publish(run.id, "privacy_preview", {
                 "provider": provider.provider_id, "model": provider.model_id,
