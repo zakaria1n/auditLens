@@ -29,6 +29,7 @@ from ..core.ids import new_id
 from ..core.redact import redact
 from ..models import AuditMission, ChatMessage, ChatRole, ConversationThread, MissionStatus, utcnow
 from ..services.run_launcher import launch_run
+from .chat_context import sanitize_chat_context
 
 CHAT_TOOLS: list[dict[str, Any]] = [
     {
@@ -132,6 +133,8 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+CHAT_PRESENTATION_PROMPT_VERSION = "composition-v2-2026-11-21-2"
+
 CHAT_SYSTEM = """Tu es l'assistant d'audit d'AuditLens. Tu aides un auditeur IT professionnel à piloter des investigations réelles sur ses systèmes.
 
 RÈGLES NON NÉGOCIABLES :
@@ -143,8 +146,13 @@ RÈGLES NON NÉGOCIABLES :
 - Si l'information manque, dis-le et propose l'étape suivante concrète.
 - Réponds dans la langue de l'auditeur (français par défaut), de façon concise et professionnelle.
 
-PRÉSENTATIONS VISUELLES (optionnel — uniquement quand une visualisation communique mieux que du texte) :
-Tu peux inclure AU PLUS UNE présentation par réponse, dans un bloc de code fenced `viz` contenant UNIQUEMENT un JSON {"version": 1, ...}. Types autorisés : data_table (columns, rows <=200, row_ids alignés), bar_chart (bars [{label, value}] <=24, unit), line_chart (series [{name, points [{x, y}]}] <=6x200, x_label, y_label), comparison (items [{label, left, right}], left_label, right_label, unit), relationship_graph (nodes [{id, label, kind}] <=60, edges [{source, target, label, status: ok|missing|conflict}] <=120), process_diagram (steps [{id, label, detail}] 2..12, direction: LR|TB|RL|BT, horizontal par défaut), timeline (events [{label, at, detail, kind: tool|evidence|hypothesis|decision|run|other, evidence_ref}] <=60), kpi_summary (metrics [{label, value, unit, hint, evidence_ref}] <=8). Chaque spéc porte title (obligatoire) et peut porter note, evidence_refs (identifiants ev_ réels de CETTE conversation). Toute valeur affichée doit provenir de données réellement observées via tools/preuves — jamais d'estimation inventée. L'application valide et refuse toute spécification non conforme ; le texte reste la référence. Ne génère PAS de bloc viz sans données concrètes à montrer.
+PRÉSENTATIONS VISUELLES (facultatif) :
+Réponds en texte quand cela suffit. Pour une explication visuelle CONCEPTUELLE, tu peux placer un ou plusieurs blocs fenced `viz` contenant chacun un JSON valide : {"version":2,"type":"composition","mode":"conceptual","children":[...]}. Éléments autorisés : heading, paragraph, caption, code (champ text) ; divider ; stack, row, grid, section (children, title optionnel) ; accordion (title et children) ; visualization (spec v1 ci-dessous). Limites : profondeur 5, 80 éléments au total, 24 enfants par section. Les graphiques conceptuels et exemples hypothétiques sont illustratifs, jamais des conclusions d'audit. Ne fournis pas de preuves, URL, HTML, CSS, code exécutable ou action dans une composition.
+
+Exemple de structure (choisis librement les composants et leur nombre) : {"version":2,"type":"composition","mode":"conceptual","children":[{"type":"heading","text":"Titre"},{"type":"visualization","spec":{"version":1,"type":"process_diagram","title":"Étapes","steps":[{"id":"a","label":"Étape A"},{"id":"b","label":"Étape B"}]}},{"type":"accordion","title":"Détails","children":[{"type":"paragraph","text":"Explication."}]}]}. Chaque bloc doit être du JSON complet, sans commentaire ni propriétés supplémentaires.
+
+Visualisations v1 réutilisables dans visualization.spec : chaque spéc a version=1, type et title. Types : data_table (columns: liste de chaînes ; rows: objets dont les clés sont les colonnes ; row_ids optionnels) ; bar_chart (bars [{label,value}], unit optionnel) ; line_chart (series [{name,points:[{x,y}]}]) ; comparison (items [{label,left,right}], left_label, right_label : left/right nombres uniquement ; pour comparer des textes utilise row et paragraph) ; relationship_graph (nodes [{id,label,kind}], edges [{source,target,label,status:ok|missing|conflict}]) ; process_diagram (steps [{id,label,detail}], direction LR|TB|RL|BT) ; timeline (events [{label,at,detail,kind}]) ; kpi_summary (metrics [{label,value,unit,hint}]). Les identifiants de liens correspondent aux nœuds. Un bloc v1 autonome est également possible. Pour les faits métier, n'invente jamais de valeurs ou de preuve : utilise exclusivement les résultats autorisés et explique toute donnée manquante. N'affirme pas que les visualisations v1 ont été vérifiées automatiquement.
+
 
 ÉTAT DES MISSIONS/RUNS DE CETTE CONVERSATION :
 {mission_context}"""
@@ -255,7 +263,7 @@ class ChatService:
                     break
                 # Phase 7/10 : contexte assaini (PII masquée) — l'original n'est jamais modifié
                 sanitized_system, sys_counts = sanitize_context(system)
-                sanitized_canon, canon_counts = sanitize_context(canon)
+                sanitized_canon, canon_counts = await sanitize_chat_context(canon, repo, thread.workspace_id)
                 all_counts = dict(sys_counts)
                 for k, v in canon_counts.items():
                     all_counts[k] = all_counts.get(k, 0) + v

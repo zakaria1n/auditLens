@@ -122,11 +122,15 @@ app.include_router(reports.router)
 async def health():
     """Santé + identité de build (diagnostic dev) : détecter un serveur stale
     (code ancien servi après modifications) sans infrastructure supplémentaire."""
+    import hashlib
+    from .agent.chat import CHAT_PRESENTATION_PROMPT_VERSION, CHAT_SYSTEM
     return {
         "status": "ok",
         "service": "auditlens-backend",
         "version": app.version,
         "git_commit": getattr(app.state, "build_commit", None),
+        "chat_presentation_prompt_version": CHAT_PRESENTATION_PROMPT_VERSION,
+        "chat_prompt_sha256": hashlib.sha256(CHAT_SYSTEM.encode("utf-8")).hexdigest(),
         "started_at": getattr(app.state, "started_at", None),
         "environment": getattr(app.state, "environment", "unknown"),
         "pid": os.getpid(),

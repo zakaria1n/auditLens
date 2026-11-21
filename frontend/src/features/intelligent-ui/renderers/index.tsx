@@ -16,6 +16,7 @@ export interface VizCallbacks {
   onSelect?: (selection: VizSelection) => void
   /** investigation immédiate : le message part avec le contexte structuré */
   onInvestigateSelection?: (selection: VizSelection) => void
+  onRepairPresentation?: (raw: Record<string, unknown>, issue: Record<string, unknown>) => Promise<unknown>
 }
 
 function EvidenceChips({ refs, onOpenEvidence }: { refs?: string[]; onOpenEvidence?: (id: string) => void }) {

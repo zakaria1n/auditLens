@@ -28,4 +28,24 @@ describe('composition déclarative', () => {
     expect(validateComposition({ ...root, children: [node] }).ok).toBe(false)
     expect(validateComposition({ ...root, style: 'position:fixed', children: [{ type: 'heading', text: 'X' }] }).ok).toBe(false)
   })
+  it('normalise les alias de présentation et signale précisément une erreur sans inventer de preuve', () => {
+    expect(validateComposition({ ...root, children: [{ type: 'column', items: [{ type: 'text', content: 'Texte' }] }] }).ok).toBe(true)
+    const result = validateComposition({ ...root, children: [{ type: 'stack', children: [{ type: 'paragraph', text: 42 }] }] })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issue.path).toBe('$.children[0].children[0].text')
+      expect(result.issue.actual).toBe('number')
+      expect(result.issue.evidenceValid).toBe('unknown')
+    }
+  })
+  it('accepte des lignes positionnelles uniquement si elles correspondent exactement aux colonnes', () => {
+    const table = { version: 1, type: 'data_table', title: 'Exemple', columns: ['id', 'qty'], rows: [['A', 3]] }
+    const valid = validateComposition({ ...root, children: [{ type: 'visualization', spec: table }] })
+    expect(valid.ok).toBe(true)
+    if (valid.ok && valid.spec.children[0].type === 'visualization' && valid.spec.children[0].spec.type === 'data_table') {
+      expect(valid.spec.children[0].spec.rows).toEqual([{ id: 'A', qty: 3 }])
+    }
+    expect(validateComposition({ ...root, children: [{ type: 'visualization', spec: { ...table, rows: [['A']] } }] }).ok).toBe(false)
+    expect(validateComposition({ ...root, children: [{ type: 'visualization', spec: { ...table, columns: ['id', 'id'] } }] }).ok).toBe(false)
+  })
 })

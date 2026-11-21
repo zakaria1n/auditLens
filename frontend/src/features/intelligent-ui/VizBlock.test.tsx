@@ -11,6 +11,22 @@ const barSpec = JSON.stringify({
 })
 
 describe('VizBlock — rendu sûr', () => {
+  it('tente une seule réparation et vérifie la réponse avant rendu', async () => {
+    const repair = vi.fn().mockResolvedValue({ version: 2, type: 'composition', mode: 'conceptual', children: [{ type: 'heading', text: 'Architecture' }] })
+    render(<VizBlock raw={{ version: 2, type: 'composition', mode: 'conceptual', children: [{ type: 'heading', text: 17 }] }} callbacks={{ onRepairPresentation: repair }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Réessayer la présentation' }))
+    expect(await screen.findByRole('heading', { name: 'Architecture' })).toBeInTheDocument()
+    expect(repair).toHaveBeenCalledTimes(1)
+  })
+
+  it('conserve le repli après une réparation invalide et ne réessaie pas', async () => {
+    const repair = vi.fn().mockResolvedValue({ version: 2, type: 'composition', mode: 'conceptual', children: [] })
+    render(<VizBlock raw={{ version: 2, type: 'composition', mode: 'conceptual', children: [] }} callbacks={{ onRepairPresentation: repair }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Réessayer la présentation' }))
+    expect(await screen.findByText(/La correction n'a pas abouti/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Réessayer la présentation' })).not.toBeInTheDocument()
+    expect(repair).toHaveBeenCalledTimes(1)
+  })
   it('affiche les libellés complets du graphe et permet la sélection au clavier', async () => {
     const onSelect = vi.fn()
     const label = 'Politique de contrôle des autorisations'

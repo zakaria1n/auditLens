@@ -1,4 +1,4 @@
-import { Component, memo } from 'react'
+import { Component, memo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { validateVizSpec, type VizSpec } from './schemas/viz'
@@ -63,9 +63,26 @@ class VizErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
  * jamais d'exécution de contenu non approuvé).
  */
 function VizBlockInner({ raw, callbacks }: { raw: unknown; callbacks?: VizCallbacks }) {
+  const [attempted, setAttempted] = useState(false)
+  const [repairing, setRepairing] = useState(false)
+  const [repaired, setRepaired] = useState<unknown>(null)
+  const [repairFailed, setRepairFailed] = useState(false)
   if (typeof raw === 'object' && raw !== null && 'version' in raw && raw.version === 2) {
-    const result = validateComposition(raw)
-    if (!result.ok) return <div className="my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Cette présentation ne peut pas être affichée. La réponse textuelle reste disponible.<details><summary>Détails techniques</summary>{result.reason}</details></div>
+    const result = validateComposition(repaired ?? raw)
+    if (!result.ok) return <div className="my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+      <p>Cette présentation ne peut pas être affichée. La réponse textuelle reste disponible.</p>
+      {callbacks?.onRepairPresentation && !attempted && <button type="button" className="mt-2 underline" disabled={repairing} onClick={() => {
+        setAttempted(true)
+        setRepairing(true)
+        void callbacks.onRepairPresentation?.(raw as Record<string, unknown>, { ...result.issue }).then(candidate => {
+          if (validateComposition(candidate).ok) setRepaired(candidate)
+          else setRepairFailed(true)
+        }).catch(() => setRepairFailed(true)).finally(() => setRepairing(false))
+      }}>Réessayer la présentation</button>}
+      {repairing && <p role="status">Correction en cours…</p>}
+      {repairFailed && <p role="status">La correction n'a pas abouti. La réponse textuelle reste disponible.</p>}
+      <details><summary>Détails techniques</summary><p>{result.reason}</p><p>Champ : {result.issue.path} ; attendu : {result.issue.expected} ; reçu : {result.issue.actual}.</p><p>{result.issue.suggestion}</p><p>Validité des preuves : non vérifiée.</p></details>
+    </div>
     return <VizErrorBoundary><Composition spec={result.spec} renderVisualization={spec => renderViz(spec, callbacks)} /></VizErrorBoundary>
   }
   const result = validateVizSpec(raw)

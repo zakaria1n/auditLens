@@ -18,6 +18,7 @@ import { CopyButton } from './ui/CopyButton'
 export interface MarkdownViewProps {
   markdown: string
   vizCallbacks?: VizCallbacks
+  isStreaming?: boolean
 }
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
@@ -51,7 +52,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
-export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
+export function MarkdownView({ markdown, vizCallbacks, isStreaming = false }: MarkdownViewProps) {
   const lines = markdown.split('\n')
   const blocks: ReactNode[] = []
   let i = 0
@@ -69,13 +70,22 @@ export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
         codeLines.push(lines[i])
         i += 1
       }
+      const closed = i < lines.length
       i += 1 // fermant
       if (fence === 'viz') {
+        if (!closed && isStreaming) {
+          blocks.push(<div key={`b${key++}`} role="status" className="my-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">Préparation de la présentation…</div>)
+          continue
+        }
         let raw: unknown = null
         try {
           raw = JSON.parse(codeLines.join('\n'))
         } catch {
-          raw = null
+          blocks.push(<div key={`b${key++}`} className="my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <p>Cette présentation n’a pas pu être affichée. La réponse textuelle reste disponible.</p>
+            <details><summary>Détails techniques</summary><p>Le bloc de présentation ne contient pas de JSON complet et valide. Les données n’ont pas été réparées automatiquement.</p></details>
+          </div>)
+          continue
         }
         blocks.push(<VizBlock key={`b${key++}`} raw={raw} callbacks={vizCallbacks} />)
         continue

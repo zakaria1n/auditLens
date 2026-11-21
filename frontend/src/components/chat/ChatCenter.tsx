@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChatModel } from '../../features/chat/useChatModel'
 
-import { searchThread } from '../../lib/chatApi'
+import { repairPresentation, searchThread } from '../../lib/chatApi'
 import { useChatWorkspaceCtx } from '../../lib/chatWorkspaceContext'
 import { WelcomeScreen } from '../../features/chat/components/WelcomeScreen'
 import { buildSelectionMessage, type VizSelection } from '../../features/intelligent-ui/interactions/selection'
@@ -60,6 +60,10 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
   const vizCallbacks = {
     onSelect: (sel: VizSelection) => setSelection(sel),
     onInvestigateSelection: (sel: VizSelection) => investigateSelection(sel),
+    onRepairPresentation: async (raw: Record<string, unknown>, issue: Record<string, unknown>) => {
+      if (!ws.activeId) throw new Error('Conversation indisponible')
+      return (await repairPresentation(ws.activeId, raw, issue)).specification
+    },
     onOpenEvidence: (evidenceId: string) => {
       const runId = ws.thread?.run_ids?.[ws.thread.run_ids.length - 1]
       navigate(runId ? '/evidence?run_id=' + runId + '&focus=' + evidenceId : '/evidence')

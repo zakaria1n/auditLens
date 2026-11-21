@@ -48,6 +48,45 @@ class StreamBody(BaseModel):
     target_message_id: str | None = None
 
 
+class PresentationRepairBody(BaseModel):
+    specification: dict
+    issue: dict = Field(default_factory=dict)
+
+
+@router.post("/{thread_id}/repair-presentation")
+async def repair_presentation_for_thread(thread_id: str, body: PresentationRepairBody, request: Request):
+    import hashlib
+    from collections import OrderedDict
+    from ...agent.presentation_repair import repair_presentation
+    from ...agent.providers import build_provider, resolve_llm_config
+
+    thread = await _get_thread_or_404(request, thread_id)
+    if thread.status == ConversationStatus.deleted:
+        raise HTTPException(410, "conversation supprimée")
+    encoded = json.dumps(body.specification, ensure_ascii=False, sort_keys=True)
+    if len(encoded) > 24000:
+        raise HTTPException(422, "Présentation trop volumineuse")
+    attempts = getattr(request.app.state, "presentation_repair_attempts", None)
+    if attempts is None:
+        attempts = request.app.state.presentation_repair_attempts = OrderedDict()
+    attempt_id = (thread_id, hashlib.sha256(encoded.encode('utf-8')).hexdigest())
+    if attempt_id in attempts:
+        raise HTTPException(409, "Une tentative a déjà été effectuée pour cette présentation.")
+    attempts[attempt_id] = None
+    if len(attempts) > 1024:
+        attempts.popitem(last=False)
+    provider = None
+    try:
+        provider = build_provider(resolve_llm_config(deps(request).llm_runtime), scenario="chat")
+        return {"specification": await repair_presentation(provider, body.specification, body.issue)}
+    except Exception as exc:
+        # Do not return raw provider exceptions or request content.
+        raise HTTPException(422, "La présentation n'a pas pu être corrigée.") from exc
+    finally:
+        if provider is not None:
+            await provider.close()
+
+
 async def _get_thread_or_404(request: Request, thread_id: str) -> ConversationThread:
     d = deps(request)
     thread = await d.repo.get_thread(thread_id)

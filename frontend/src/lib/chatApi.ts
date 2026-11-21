@@ -92,6 +92,12 @@ export function getThread(id: string) {
   return request<{ thread: ThreadMeta; messages: ChatMsg[] }>(`/api/conversations/${id}`)
 }
 
+export function repairPresentation(threadId: string, specification: Record<string, unknown>, issue: Record<string, unknown>) {
+  return request<{ specification: unknown }>(`/api/conversations/${encodeURIComponent(threadId)}/repair-presentation`, {
+    method: 'POST', body: JSON.stringify({ specification, issue }),
+  })
+}
+
 export function getBranches(id: string) {
   return request<{ head_message_id: string | null; nodes: BranchNode[] }>(
     `/api/conversations/${id}/branches`,

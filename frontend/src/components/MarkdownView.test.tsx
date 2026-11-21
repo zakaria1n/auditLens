@@ -16,4 +16,18 @@ describe('Markdown des réponses', () => {
     expect(screen.getByRole('button', { name: 'Copier le code' })).toBeInTheDocument()
     expect(screen.getByText('{"ok": true}')).toBeInTheDocument()
   })
+  it('attend la fermeture du bloc viz avant de l’activer pendant le streaming', () => {
+    const { rerender } = render(<MarkdownView markdown={'Voici le schéma\n\n```viz\n{"version":2'} isStreaming />)
+    expect(screen.getByRole('status')).toHaveTextContent('Préparation')
+    expect(screen.queryByText(/Présentation non supportée/i)).not.toBeInTheDocument()
+    rerender(<MarkdownView markdown={'Voici le schéma\n\n```viz\n{"version":2'} />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByText(/La réponse textuelle reste disponible/)).toBeInTheDocument()
+  })
+  it('affiche une composition entre deux paragraphes', () => {
+    render(<MarkdownView markdown={'Introduction\n\n```viz\n{"version":2,"type":"composition","mode":"conceptual","children":[{"type":"heading","text":"Architecture"}]}\n```\n\nConclusion'} />)
+    expect(screen.getByText('Introduction')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Architecture' })).toBeInTheDocument()
+    expect(screen.getByText('Conclusion')).toBeInTheDocument()
+  })
 })
