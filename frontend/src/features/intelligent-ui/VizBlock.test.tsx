@@ -37,7 +37,7 @@ describe('VizBlock — rendu sûr', () => {
     expect(node.textContent).toContain('autorisations')
     node.focus()
     await userEvent.keyboard('{Enter}')
-    expect(onSelect).toHaveBeenCalledWith({ vizType: 'relationship_graph', vizTitle: 'Architecture', label })
+    expect(onSelect).toHaveBeenCalledWith({ vizType: 'relationship_graph', vizTitle: 'Architecture', label, nodeId: 'a' })
     expect(screen.queryByText('lien vérifié')).not.toBeInTheDocument()
   })
   it.each([['RL', 'flex-row-reverse', 'rotate-180'], ['BT', 'flex-col-reverse', '-rotate-90']])(

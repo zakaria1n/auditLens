@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSelectionMessage, describeSelection, formatSelectionContext } from './selection'
+import { buildSelectionMessage, describeSelection, formatSelectionContext, selectionForContext } from './selection'
 
 describe('handoff structuré de sélection (Phase 4D)', () => {
+  it('isole les sélections entre conversations et entre branches', () => {
+    const value = { vizType: 'relationship_graph' as const, vizTitle: 'Flux', label: 'Preuve' }
+    const bound = { threadId: 'conversation-a', headId: 'head-1', value }
+    expect(selectionForContext(bound, 'conversation-a', 'head-1')).toEqual(value)
+    expect(selectionForContext(bound, 'conversation-b', 'head-1')).toBeNull()
+    expect(selectionForContext(bound, 'conversation-a', 'head-2')).toBeNull()
+  })
   it('forme un contexte explicite : présentation + enregistrement + id', () => {
     const ctx = formatSelectionContext({
       vizType: 'data_table', vizTitle: 'Commandé vs livré',
@@ -21,6 +28,10 @@ describe('handoff structuré de sélection (Phase 4D)', () => {
       edge: { source: 'SO-2', target: 'INV-9', status: 'missing', label: 'facture' },
     })
     expect(ctx).toContain('lien: SO-2 → INV-9 (statut: missing) (facture)')
+  })
+
+  it('conserve l’identifiant stable du nœud sélectionné', () => {
+    expect(formatSelectionContext({ vizType: 'relationship_graph', vizTitle: 'Flux', label: 'Agent', nodeId: 'agent-1' })).toContain('noeud_id: agent-1')
   })
 
   it('l’instruction humaine accompagne TOUJOURS le contexte (jamais un envoi nu)', () => {

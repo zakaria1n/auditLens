@@ -16,10 +16,22 @@ export interface VizSelection {
   recordId?: string
   /** libellé sélectionné (barre, item de comparaison, nœud de graphe, étape) */
   label?: string
+  nodeId?: string
   /** arête de graphe sélectionnée */
   edge?: { source: string; target: string; status?: string; label?: string }
   /** preuve directement ciblée */
   evidenceRef?: string
+}
+
+/** Never carry a selection from a different thread or conversation branch. */
+export interface BoundVizSelection {
+  threadId: string | null
+  headId: string | null
+  value: VizSelection
+}
+
+export function selectionForContext(bound: BoundVizSelection | null, threadId: string | null, headId: string | null): VizSelection | null {
+  return bound && bound.threadId === threadId && bound.headId === headId ? bound.value : null
 }
 
 export function describeSelection(selection: VizSelection): string {
@@ -44,6 +56,7 @@ export function formatSelectionContext(selection: VizSelection): string {
     lines.push(`enregistrement: ${JSON.stringify(selection.record)}`)
   }
   if (selection.label !== undefined) lines.push(`élément: ${selection.label}`)
+  if (selection.nodeId !== undefined) lines.push(`noeud_id: ${selection.nodeId}`)
   if (selection.edge !== undefined) {
     lines.push(
       `lien: ${selection.edge.source} → ${selection.edge.target}` +

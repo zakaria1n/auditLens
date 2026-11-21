@@ -358,12 +358,12 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
               tabIndex={0}
               aria-label={node.label}
               onClick={() =>
-                callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label })
+                callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id })
               }
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
-                  callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label })
+                  callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id })
                 }
               }}
             >

@@ -5,7 +5,7 @@ import { useChatModel } from '../../features/chat/useChatModel'
 import { repairPresentation, searchThread } from '../../lib/chatApi'
 import { useChatWorkspaceCtx } from '../../lib/chatWorkspaceContext'
 import { WelcomeScreen } from '../../features/chat/components/WelcomeScreen'
-import { buildSelectionMessage, type VizSelection } from '../../features/intelligent-ui/interactions/selection'
+import { buildSelectionMessage, selectionForContext, type BoundVizSelection, type VizSelection } from '../../features/intelligent-ui/interactions/selection'
 import { SelectionChip } from '../../features/intelligent-ui/interactions/SelectionChip'
 import { ChatMessages } from './ChatMessages'
 import { ChatComposer } from '../../features/chat/ChatComposer'
@@ -34,7 +34,9 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [selection, setSelection] = useState<VizSelection | null>(null)
+  const [boundSelection, setBoundSelection] = useState<BoundVizSelection | null>(null)
+  const selection = selectionForContext(boundSelection, ws.activeId, ws.headId)
+  const setSelection = (value: VizSelection | null) => setBoundSelection(value ? { threadId: ws.activeId, headId: ws.headId, value } : null)
 
   const sendWithSelection = async (text: string, withSelection: VizSelection | null) => {
     const final = withSelection ? buildSelectionMessage(withSelection, text) : text
