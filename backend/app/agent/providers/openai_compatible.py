@@ -99,8 +99,9 @@ class OpenAICompatibleProvider(LLMProvider):
 
     async def chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         mapped = self._map_messages(system, messages)
-        kwargs: dict[str, Any] = {"model": self.model_id, "messages": mapped, "max_tokens": self._max_tokens}
-        if self._disable_thinking:
+        token_parameter = "max_completion_tokens" if self.provider_id == "openai" and self.model_id.startswith("gpt-5") else "max_tokens"
+        kwargs: dict[str, Any] = {"model": self.model_id, "messages": mapped, token_parameter: self._max_tokens}
+        if self._disable_thinking or self.provider_id == "deepseek":
             # Compat Z.AI / GLM : couper le raisonnement pour les tâches structurées (réponse directe)
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         if tools:
@@ -139,8 +140,9 @@ class OpenAICompatibleProvider(LLMProvider):
         return LLMResponse(content=content, tool_calls=tool_calls, input_chars=total_chars, usage=usage)
 
     async def stream_chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[str | LLMResponse]:
-        kwargs: dict[str, Any] = {"model": self.model_id, "messages": self._map_messages(system, messages), "max_tokens": self._max_tokens, "stream": True}
-        if self._disable_thinking:
+        token_parameter = "max_completion_tokens" if self.provider_id == "openai" and self.model_id.startswith("gpt-5") else "max_tokens"
+        kwargs: dict[str, Any] = {"model": self.model_id, "messages": self._map_messages(system, messages), token_parameter: self._max_tokens, "stream": True}
+        if self._disable_thinking or self.provider_id == "deepseek":
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         if tools:
             kwargs["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in tools]

@@ -281,8 +281,10 @@ function validateRelationshipGraph(raw: Record<string, unknown>): VizValidation 
     if (!isRecord(node)) return fail('nœuds invalides')
     const id = typeof node.id === 'string' && ID_RE.test(node.id) ? node.id : null
     if (!id) return fail('id de nœud requis (format sûr)')
+    if (ids.has(id)) return fail('identifiant de nœud en double')
     ids.add(id)
-    if (typeof node.label !== 'string' || !node.label.trim()) return fail('libellé de nœud requis')
+    if (!safeString(node.label, VIZ_LIMITS.note)) return fail('libellé de nœud invalide ou trop long')
+    if (node.kind !== undefined && !safeString(node.kind, VIZ_LIMITS.title)) return fail('type de nœud invalide')
     if (Object.keys(node).some((k) => !['id', 'label', 'kind'].includes(k))) return fail('clés de nœud inconnues')
   }
   const edges = raw.edges
@@ -293,6 +295,7 @@ function validateRelationshipGraph(raw: Record<string, unknown>): VizValidation 
     if (!isRecord(edge)) return fail('arêtes invalides')
     if (typeof edge.source !== 'string' || !ids.has(edge.source)) return fail(`source inconnue : ${String(edge.source).slice(0, 40)}`)
     if (typeof edge.target !== 'string' || !ids.has(edge.target)) return fail(`target inconnue : ${String(edge.target).slice(0, 40)}`)
+    if (edge.label !== undefined && !safeString(edge.label, VIZ_LIMITS.title)) return fail('libellé de lien invalide')
     if (edge.status !== undefined && !['ok', 'missing', 'conflict'].includes(edge.status as string)) {
       return fail('status limité à ok|missing|conflict')
     }

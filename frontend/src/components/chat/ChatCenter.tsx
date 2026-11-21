@@ -167,7 +167,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
           </div>
         ) : (
           <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={vizCallbacks.onOpenEvidence}
-onInvestigate={investigateLegacyRecord} />}</div></div>
+onInvestigate={investigateLegacyRecord} vizCallbacks={vizCallbacks} />}</div></div>
           <footer className="bg-white px-4 pb-4 pt-2"><div className="mx-auto max-w-[760px]">
             {selection && <SelectionChip selection={selection} onClear={() => setSelection(null)} onInvestigate={() => investigateSelection(selection)} />}
             <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={text => sendWithSelection(text, selection)} onCancel={() => void ws.cancel()} />

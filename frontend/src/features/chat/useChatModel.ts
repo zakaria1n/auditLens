@@ -19,13 +19,13 @@ export function useChatModel(route: string) {
         const config = await getLLMConfig()
         if (!active) return
         setProvider(config.provider); setModel(config.model)
-        let models: ModelOption[] = config.model ? [{ id: config.model, label: config.model }] : []
+        let models: ModelOption[] = config.model ? [{ id: config.model, label: `${config.model} (actif · non vérifié)` }] : []
         if (config.provider === 'opencode' || config.provider === 'opencode-cli') {
-          const catalogue = await listOpencodeFreeModels()
+          const catalogue = await listOpencodeFreeModels(config.provider === 'opencode-cli' ? 'free' : 'api')
           if (!active) return
           if (!catalogue.ok) throw new Error(catalogue.error || 'Catalogue indisponible')
           models = catalogue.models.map(item => ({ id: item.id, label: item.name }))
-          if (config.model && !models.some(item => item.id === config.model)) models.unshift({ id: config.model, label: `${config.model} (actif)` })
+          if (config.model && !models.some(item => item.id === config.model)) models.unshift({ id: config.model, label: `${config.model} (actif · non vérifié)` })
         } else if (['openai', 'anthropic', 'deepseek', 'gemini'].includes(config.provider)) {
           // suggestions vérifiées (statiques) — le choix reste libre côté Réglages IA
           const curated = await listProviderModels(config.provider)
@@ -33,7 +33,7 @@ export function useChatModel(route: string) {
           if (curated.ok && curated.models.length > 0) {
             models = curated.models.map(item => ({ id: item.id, label: item.name }))
             if (config.model && !models.some(item => item.id === config.model)) {
-              models.unshift({ id: config.model, label: `${config.model} (actif)` })
+              models.unshift({ id: config.model, label: `${config.model} (actif · non vérifié)` })
             }
           }
         }

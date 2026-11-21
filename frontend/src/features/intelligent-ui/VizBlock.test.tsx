@@ -11,6 +11,19 @@ const barSpec = JSON.stringify({
 })
 
 describe('VizBlock — rendu sûr', () => {
+  it('affiche les libellés complets du graphe et permet la sélection au clavier', async () => {
+    const onSelect = vi.fn()
+    const label = 'Politique de contrôle des autorisations'
+    render(<VizBlock raw={{ version: 1, type: 'relationship_graph', title: 'Architecture',
+      nodes: [{ id: 'a', label }, { id: 'b', label: 'Preuves' }], edges: [{ source: 'a', target: 'b' }] }} callbacks={{ onSelect }} />)
+    const node = screen.getByRole('button', { name: label })
+    expect(node.textContent).toContain('Politique de contrôle')
+    expect(node.textContent).toContain('autorisations')
+    node.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenCalledWith({ vizType: 'relationship_graph', vizTitle: 'Architecture', label })
+    expect(screen.queryByText('lien vérifié')).not.toBeInTheDocument()
+  })
   it.each([['RL', 'flex-row-reverse', 'rotate-180'], ['BT', 'flex-col-reverse', '-rotate-90']])(
     'affiche %s dans le bon sens', (direction, axis, arrow) => {
       const { container } = render(<VizBlock raw={{ version: 1, type: 'process_diagram', title: 'Processus', direction,

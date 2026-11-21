@@ -12,7 +12,6 @@ import { SourceIntelligenceCard } from '../../features/source-discovery/SourceIn
 import type { SourceIntelligence } from '../../features/source-discovery/SourceIntelligenceCard'
 import { ToolCallCard } from './ToolCallCard'
 import type { VizCallbacks } from '../../features/intelligent-ui/renderers'
-import type { VizSelection } from '../../features/intelligent-ui/interactions/selection'
 
 interface MessagesProps {
   messages: ChatMsg[]
@@ -25,17 +24,8 @@ interface MessagesProps {
   onInvestigate?: (record: Record<string, unknown>) => void
   onOpenThread?: (threadId: string) => void
   onOpenEvidence?: (evidenceId: string) => void
+  vizCallbacks?: VizCallbacks
 }
-
-const vizCallbacksFor = (
-  onInvestigate?: MessagesProps['onInvestigate'],
-  onOpenEvidence?: (id: string) => void,
-): VizCallbacks => ({
-  onOpenEvidence,
-  onSelect: (selection: VizSelection) => {
-    if (selection.record !== undefined) onInvestigate?.(selection.record)
-  },
-})
 
 function siblingsOf(branches: BranchNode[], message: ChatMsg): BranchNode[] {
   return branches.filter((n) => n.parent_id === message.parent_id && n.role === message.role)
@@ -158,7 +148,7 @@ function UserMessage({
   return (
     <div className="flex flex-col items-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-4 py-2.5 text-[15px] leading-relaxed text-white">
-        <p className="whitespace-pre-wrap">{text}</p>
+        <p dir="auto" className="whitespace-pre-wrap break-words">{text}</p>
       </div>
       <div className="mt-1 flex items-center gap-2">
         <MessageStatusBadge status={message.status} />
@@ -199,7 +189,7 @@ function AssistantMessage({
   onSwitchBranch,
   onInvestigate,
   onOpenThread,
-  onOpenEvidence,
+  vizCallbacks,
 }: {
   message: ChatMsg
   branches: BranchNode[]
@@ -209,13 +199,13 @@ function AssistantMessage({
   onSwitchBranch: (id: string) => void
   onInvestigate?: (record: Record<string, unknown>) => void
   onOpenThread?: (threadId: string) => void
-  onOpenEvidence?: (evidenceId: string) => void
+  vizCallbacks?: VizCallbacks
 }) {
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
   const toolParts = message.parts.filter((p): p is Extract<ChatMsg['parts'][number], { type: 'tool_call' }> => p.type === 'tool_call')
   return (
     <div className="flex flex-col items-start">
-      <div className="w-full rounded-2xl rounded-bl-md border border-slate-200/70 bg-surface-1 px-4 py-3">
+      <div className="w-full min-w-0 rounded-2xl rounded-bl-md border border-slate-200/70 bg-white px-4 py-3 sm:px-5 sm:py-4">
         {toolParts.map((p) => {
           if (p.tool === 'inspect_source' && p.result && !p.result.status) {
             return <SourceIntelligenceCard key={p.id} intel={p.result as unknown as SourceIntelligence} />
@@ -239,7 +229,7 @@ function AssistantMessage({
         })}
         {text && (
           <div className="text-[15px] leading-relaxed text-slate-800 [&_p]:my-1.5 [&_li]:my-0.5">
-            <MarkdownView markdown={text} vizCallbacks={vizCallbacksFor(onInvestigate, onOpenEvidence)} />
+            <MarkdownView markdown={text} vizCallbacks={vizCallbacks} />
           </div>
         )}
         {message.status === 'running' && toolParts.length === 0 && !text && (
@@ -279,7 +269,7 @@ export function ChatMessages({
   onSwitchBranch,
   onInvestigate,
   onOpenThread,
-  onOpenEvidence,
+  vizCallbacks,
 }: MessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -312,7 +302,7 @@ export function ChatMessages({
               onSwitchBranch={onSwitchBranch}
               onInvestigate={onInvestigate}
               onOpenThread={onOpenThread}
-              onOpenEvidence={onOpenEvidence}
+              vizCallbacks={vizCallbacks}
             />
           </div>
         ),

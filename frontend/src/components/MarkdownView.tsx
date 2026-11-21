@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { VizBlock } from '../features/intelligent-ui/VizBlock'
 import type { VizCallbacks } from '../features/intelligent-ui/renderers'
+import { CopyButton } from './ui/CopyButton'
 
 /**
  * Rendu markdown léger (aucune dépendance) : titres, gras, italique, code
@@ -79,14 +80,31 @@ export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
         blocks.push(<VizBlock key={`b${key++}`} raw={raw} callbacks={vizCallbacks} />)
         continue
       }
+      const code = codeLines.join('\n')
       blocks.push(
-        <pre
-          key={`b${key++}`}
-          className="overflow-x-auto rounded-lg bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-100"
-        >
-          {codeLines.join('\n')}
-        </pre>,
+        <div key={`b${key++}`} className="my-3 min-w-0 overflow-hidden rounded-xl bg-slate-900">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs text-slate-300">
+            <span>{fence || 'Code'}</span><CopyButton text={code} label="Copier le code" className="text-slate-300 hover:text-white" />
+          </div>
+          <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-slate-100"><code>{code}</code></pre>
+        </div>,
       )
+      continue
+    }
+
+    // GFM tables are common in audit answers. Keep the table scrollable on mobile.
+    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+      const cells = (row: string) => row.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim())
+      const headers = cells(line)
+      const rows: string[][] = []
+      i += 2
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(cells(lines[i++]))
+      blocks.push(<div key={`b${key++}`} className="my-3 max-w-full overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full min-w-max border-collapse text-left text-sm">
+          <thead className="bg-slate-50"><tr>{headers.map((cell, index) => <th key={index} scope="col" className="px-3 py-2 font-semibold">{renderInline(cell, `th${key}-${index}`)}</th>)}</tr></thead>
+          <tbody>{rows.map((row, ri) => <tr key={ri} className="border-t border-slate-100">{headers.map((_, ci) => <td key={ci} className="px-3 py-2 align-top">{renderInline(row[ci] ?? '', `td${key}-${ri}-${ci}`)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>)
       continue
     }
 
@@ -170,5 +188,5 @@ export function MarkdownView({ markdown, vizCallbacks }: MarkdownViewProps) {
     )
   }
 
-  return <div className="flex flex-col">{blocks}</div>
+  return <div className="flex min-w-0 flex-col break-words" dir="auto">{blocks}</div>
 }

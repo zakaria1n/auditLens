@@ -40,6 +40,25 @@ async def test_catalogue_filters_free_models_and_includes_big_pickle(client, mon
     response = await client.get('/api/settings/llm/opencode/models')
     assert [model['id'] for model in response.json()['models']] == ['big-pickle','alpha-free']
 
+async def test_opencode_api_catalogue_excludes_free_and_other_protocols(client, monkeypatch):
+    import json
+    from io import BytesIO
+
+    class Response(BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *args): self.close()
+
+    def item(model, endpoint, price):
+        return {'id': model, 'type': 'chat', 'capabilities': {'tools': {'supported': True}},
+                'api': {endpoint: {}}, 'cost': {'text': {'input': {'price': price}, 'output': {'price': price}}}}
+
+    payload = json.dumps({'data': [item('big-pickle', 'chat-completions', 0),
+        item('alpha-free', 'chat-completions', 0), item('paid-chat', 'chat-completions', 1),
+        item('paid-responses', 'responses', 1), item('unlabelled-free', 'chat-completions', 0)]}).encode()
+    monkeypatch.setattr('app.api.routes.settings_llm.urllib.request.urlopen', lambda *args, **kwargs: Response(payload))
+    response = await client.get('/api/settings/llm/opencode/models?mode=api')
+    assert [model['id'] for model in response.json()['models']] == ['paid-chat']
+
 def test_opencode_free_limit_message_does_not_invent_ip_quota():
     from app.agent.providers.openai_compatible import OpenAICompatibleProvider
     provider = OpenAICompatibleProvider('opencode', 'big-pickle', 'dummy')
@@ -71,9 +90,9 @@ async def test_provider_models_curated_lists(client):
     """Chaque provider majeur renvoie une liste de suggestions non vide avec la
     forme attendue (id + libellé) et une note de fraîcheur explicite."""
     for provider, expected_first in (
-        ("openai", "gpt-5-chat-latest"),
-        ("anthropic", "claude-opus-4-6"),
-        ("deepseek", "deepseek-chat"),
+        ("openai", "gpt-5-mini"),
+        ("anthropic", "claude-sonnet-5-5"),
+        ("deepseek", "deepseek-flash"),
         ("gemini", "gemini-4-hydrogen"),
     ):
         r = await client.get(f"/api/settings/llm/models?provider={provider}")
@@ -116,13 +135,28 @@ async def test_models_live_listing_success(client, monkeypatch):
 
     async def fake_live(provider, key, base_url=None):
         assert key == "sk-test", "la clé fournie doit être transmise au provider"
-        return [{"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"}]
+        return [{"id": "models/gemini-4-hydrogen", "name": "Gemini"},
+                {"id": "gemini-live-audio", "name": "Live"},
+                {"id": "gemini-embedding", "name": "Embedding"}]
 
     monkeypatch.setattr(mod, "_list_models_live", fake_live)
-    r = await client.get("/api/settings/llm/models?provider=gemini&api_key=sk-test")
+    r = await client.post("/api/settings/llm/models", json={"provider": "gemini", "api_key": "sk-test"})
     body = r.json()
-    assert body["source"] == "live" and body["models"][0]["id"] == "gemini-3.8-flash"
+    assert body["source"] == "live" and [m["id"] for m in body["models"]] == ["models/gemini-4-hydrogen"]
     assert "LIVE" in body["detail"]
+
+
+async def test_empty_filtered_live_catalogue_does_not_suggest_unavailable_models(client, monkeypatch):
+    import app.api.routes.settings_llm as mod
+
+    async def fake_live(provider, key, base_url=None):
+        return [{"id": "gemini-live-audio", "name": "Live"}]
+
+    monkeypatch.setattr(mod, "_list_models_live", fake_live)
+    response = await client.post('/api/settings/llm/models', json={'provider': 'gemini', 'api_key': 'secret-test'})
+    body = response.json()
+    assert body['source'] == 'live' and body['models'] == [] and body['warning']
+    assert 'secret-test' not in response.text
 
 
 async def test_models_live_failure_falls_back_with_warning(client, monkeypatch):
@@ -133,7 +167,7 @@ async def test_models_live_failure_falls_back_with_warning(client, monkeypatch):
         raise RuntimeError("401 invalid key")
 
     monkeypatch.setattr(mod, "_list_models_live", boom)
-    r = await client.get("/api/settings/llm/models?provider=gemini&api_key=sk-bad")
+    r = await client.post("/api/settings/llm/models", json={"provider": "gemini", "api_key": "sk-bad"})
     body = r.json()
     assert body["ok"] is True and body["source"] == "curated"
     assert body["models"], "repli non vide"

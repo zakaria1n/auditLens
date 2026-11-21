@@ -115,7 +115,7 @@ async def test_llm_config(request: Request, body: LLMConfigBody | None = None):
         )
         ok = bool(resp.content or resp.tool_calls)
         return {"ok": ok, "provider": provider.provider_id, "model": provider.model_id,
-                "message": "connexion réussie" if ok else "réponse vide"}
+                "message": "Connexion texte réussie ; les appels d’outils et le streaming ne sont pas vérifiés par ce test." if ok else "réponse vide"}
     except ProviderError as exc:
         return {"ok": False, "provider": cfg["provider"], "error": str(exc)}
     finally:
@@ -123,10 +123,12 @@ async def test_llm_config(request: Request, body: LLMConfigBody | None = None):
 
 
 @router.get("/opencode/models")
-async def list_opencode_free_models(api_key: str | None = None):
+async def list_opencode_free_models(api_key: str | None = None, mode: str = "free"):
     """Catalogue LIVE des modèles OpenCode Zen accessibles (clé "public" par défaut,
     ou clé BYOK fournie). Ne renvoie que les modèles chat supportant les tool calls —
     condition du harness (docs/05). Aucune clé n'est persistée ni journalisée."""
+    if mode not in ("free", "api"):
+        raise HTTPException(400, "mode de catalogue inconnu")
     key = api_key or "public"
     req = urllib.request.Request(ZEN_CATALOG_URL, headers={
         "Authorization": f"Bearer {key}", "User-Agent": ZEN_USER_AGENT,
@@ -142,9 +144,19 @@ async def list_opencode_free_models(api_key: str | None = None):
         if m.get("type") != "chat" or not caps.get("tools", {}).get("supported"):
             continue
         mid = m["id"]
-        # uniquement les modèles gratuits : suffixe -free + big-pickle (raisonnement price 0)
-        if not (mid.endswith("-free") or mid == "big-pickle"):
+        is_free = mid.endswith("-free") or mid == "big-pickle"
+        if mode == "free" and not is_free:
             continue
+        # The free models are reserved for OpenCode. API mode only offers paid
+        # models explicitly advertising the Chat Completions endpoint we use.
+        if mode == "api":
+            text_cost = (m.get("cost") or {}).get("text") or {}
+            input_price = (text_cost.get("input") or {}).get("price")
+            output_price = (text_cost.get("output") or {}).get("price")
+            if (is_free or "chat-completions" not in (m.get("api") or {}) or
+                not isinstance(input_price, (int, float)) or not isinstance(output_price, (int, float)) or
+                max(input_price, output_price) <= 0):
+                continue
         models.append({
             "id": mid,
             "name": m.get("name", mid),
@@ -154,69 +166,58 @@ async def list_opencode_free_models(api_key: str | None = None):
     return {"ok": True, "models": models}
 
 
-# --- Catalogues de modèles SUGGÉRÉS par provider (Phase UI — choix facilité) ---
-# Listes statiques de modèles chat supportant les tool calls (condition docs/05),
-# vérifiées à jour en novembre 2026. Ce NE SONT PAS des listes exhaustives :
-# l'utilisateur peut toujours saisir librement un identifiant de modèle plus récent.
+# Conservative list of text models documented with function calling. A live
+# catalogue confirms visibility to the key, not quota or actual tool compatibility.
 CURATED_MODELS: dict[str, list[dict]] = {
-    # vérifié web nov. 2026 : la famille GPT-5 fonctionne en Chat Completions avec
-    # tools ; les GPT-6.2 exigent l'API Responses pour le tool calling (exclus —
-    # notre harness est Chat Completions) ; la famille 4.1 reste disponible
     "openai": [
-        {"id": "gpt-5-chat-latest", "name": "GPT-5 Chat — recommandé (Chat Completions + tools)"},
-        {"id": "gpt-5-mini", "name": "GPT-5 mini — économique"},
-        {"id": "gpt-5", "name": "GPT-5"},
-        {"id": "gpt-4.1-mini", "name": "GPT-4.1 mini — génération précédente, toujours disponible"},
-        {"id": "gpt-4.1", "name": "GPT-4.1 — génération précédente"},
+        {"id": "gpt-5-mini", "name": "GPT-5 mini"},
+        {"id": "gpt-5.4", "name": "GPT-5.4"},
     ],
-    # vérifié web nov. 2026 (docs platform.claude.com) : génération Opus 4.6 /
-    # Sonnet 5 / Sonnet 4.6 ; les IDs exacts de votre compte viennent du listing LIVE
     "anthropic": [
-        {"id": "claude-opus-4-6", "name": "Claude Opus 4.6 — raisonnement profond (outils natifs)"},
-        {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 — équilibre qualité/prix"},
-        {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 — génération précédente"},
-        {"id": "claude-haiku-4-5", "name": "Claude Haiku 4.5 — rapide et économique"},
+        {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5"},
+        {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5"},
     ],
-    # vérifié web nov. 2026 : alias STABLES (deepseek-chat/reasoner pointent toujours
-    # vers le dernier modèle V3.x/V4) ; deepseek-flash est le nouvel alias récent
     "deepseek": [
-        {"id": "deepseek-chat", "name": "DeepSeek Chat — alias stable (dernier modèle non-reasoning)"},
-        {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner — alias stable (raisonnement étendu)"},
-        {"id": "deepseek-flash", "name": "DeepSeek Flash — nouvel alias rapide"},
+        {"id": "deepseek-flash", "name": "DeepSeek Flash"},
+        {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro"},
     ],
-    # vérifié web nov. 2026 (Google AI Studio + retour utilisateur) : la génération
-    # 4 (hydrogen/neon/carbon) remplace la 3.8 ; les anciens 2.5-flash/2.5-pro/2.0-flash
-    # renvoyaient 404/400 sur l'API actuelle
     "gemini": [
-        {"id": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen — recommandé (remplace 3.8 Flash)"},
-        {"id": "gemini-4-carbon", "name": "Gemini 4 Carbon — puissance maximale"},
-        {"id": "gemini-4-neon", "name": "Gemini 4 Neon — thinking levels (tier payant)"},
-        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash — génération précédente"},
-        {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite — économique"},
-        {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite — encore actif"},
+        {"id": "gemini-4-hydrogen", "name": "Gemini 4 Hydrogen"},
+        {"id": "gemini-4-carbon", "name": "Gemini 4 Carbon"},
+        {"id": "gemini-4-neon", "name": "Gemini 4 Neon"},
+        {"id": "gemini-4-argon", "name": "Gemini 4 Argon"},
     ],
     "mock": [{"id": "mock-scripted-v1", "name": "MockLLM scripté — tests sans clé ni réseau"}],
 }
 
 CURATED_NOTES: dict[str, str] = {
-    "openai": "Suggestions OpenAI vérifiées web (nov. 2026) — limitées aux modèles Chat Completions + tool calls (les GPT-6.2 exigent l'API Responses). Avec une clé, la liste LIVE de votre clé fait foi.",
-    "anthropic": "Suggestions Anthropic (nov. 2026). Avec une clé configurée, la liste LIVE de votre clé est récupérée automatiquement.",
-    "deepseek": "Suggestions DeepSeek API (nov. 2026). Avec une clé configurée, la liste LIVE de votre compte est récupérée automatiquement.",
-    "gemini": "Identifiants vérifiés via Google AI Studio (nov. 2026). Avec une clé configurée, la liste LIVE de votre clé est récupérée automatiquement — c'est la référence absolue.",
-    "mock": "Provider de test : aucun appel réseau.",
-    "compatible": "Endpoint compatible OpenAI générique (base_url requis) : la liste dépend du serveur — saisissez l'identifiant exact du modèle (ex. glm-5.3-flash sur Z.AI, llama3.1 sur Ollama local).",
-    "opencode": "Catalogue dynamique : la liste live des modèles gratuits est récupérée via /api/settings/llm/opencode/models.",
-    "opencode-cli": "Catalogue dynamique : la liste live des modèles gratuits est récupérée via /api/settings/llm/opencode/models (aucune clé requise).",
+    provider: "Sélection documentée en novembre 2026 pour texte et outils ; l'accès et le quota dépendent de votre compte. Testez votre configuration."
+    for provider in ("openai", "anthropic", "deepseek", "gemini")
 }
-
+CURATED_NOTES.update({
+    "mock": "Provider de test : aucun appel réseau.",
+    "compatible": "Endpoint compatible générique : base_url et identifiant saisis manuellement ; compatibilité à tester.",
+    "opencode": "Les modèles gratuits sont réservés au client OpenCode ; catalogue via /api/settings/llm/opencode/models.",
+    "opencode-cli": "Catalogue des modèles gratuits via /api/settings/llm/opencode/models (accès selon fournisseur).",
+})
 
 NON_CHAT_MODEL_HINTS = ("embedding", "whisper", "tts", "dall-e", "moderation", "realtime", "audio", "transcribe")
 
 
+def filter_supported_models(provider: str, models: list[dict]) -> list[dict]:
+    """Intersect live availability with documented models; don't infer capabilities from names."""
+    candidates = CURATED_MODELS.get(provider)
+    if candidates is None:
+        return []
+    live_ids = {str(model.get("id", "")).removeprefix("models/"): str(model.get("id", "")) for model in models}
+    return [{**candidate, "id": live_ids[candidate["id"]]} for candidate in candidates if candidate["id"] in live_ids]
+
+
 async def _list_models_live(provider: str, api_key: str, base_url: str | None = None) -> list[dict]:
-    """Liste LIVE des modèles exposés par le provider pour CETTE clé (source de
-    vérité absolue — les catalogues statiques vieillissent). Filtre grossier des
-    modèles non-chat ; un modèle absent ici ne peut pas être appelé."""
+    """Modèles visibles pour cette clé, sans garantie de quota ni de compatibilité.
+
+    Le résultat est ensuite recoupé avec une liste documentée.
+    """
     if provider == "anthropic":
         import anthropic
 
@@ -246,8 +247,25 @@ async def _list_models_live(provider: str, api_key: str, base_url: str | None = 
         await client.close()
 
 
+class ModelCatalogBody(BaseModel):
+    provider: str
+    api_key: str | None = None
+    base_url: str | None = None
+
+
+@router.post("/models")
+async def list_provider_models_with_key(request: Request, body: ModelCatalogBody):
+    return await _list_provider_models(request, body.provider, body.api_key, body.base_url)
+
+
 @router.get("/models")
 async def list_provider_models(request: Request, provider: str, api_key: str | None = None, base_url: str | None = None):
+    if api_key:
+        raise HTTPException(400, "Envoyez la clé dans le corps POST, pas dans l'URL.")
+    return await _list_provider_models(request, provider, None, base_url)
+
+
+async def _list_provider_models(request: Request, provider: str, api_key: str | None = None, base_url: str | None = None):
     """Modèles pour un provider (choix facilité dans l'UI).
 
     Stratégie : LIVE d'abord — la liste réelle exposée par le provider pour
@@ -268,12 +286,14 @@ async def list_provider_models(request: Request, provider: str, api_key: str | N
     if liveable:
         try:
             models = await _list_models_live(provider, key, live_base)
-            if models:
-                return {
-                    "ok": True, "provider": provider, "source": "live",
-                    "models": models, "note": CURATED_NOTES[provider],
-                    "detail": "liste LIVE exposée par le provider pour cette clé — référence absolue",
-                }
+            if provider != "compatible":
+                models = filter_supported_models(provider, models)
+            return {
+                "ok": True, "provider": provider, "source": "live",
+                "models": models, "note": CURATED_NOTES[provider],
+                "detail": "Catalogue LIVE filtré ; disponibilité et capacités réelles à tester avec votre clé.",
+                **({"warning": "Aucun modèle documenté trouvé pour cette clé. Vérifiez les droits ou saisissez un modèle compatible."} if not models else {}),
+            }
         except Exception as exc:  # noqa: BLE001 — repli honnête, la raison est affichée
             live_warning = f"liste live indisponible ({type(exc).__name__}) — suggestions statiques affichées"
         else:

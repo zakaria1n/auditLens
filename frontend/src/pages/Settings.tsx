@@ -43,13 +43,11 @@ export function SettingsPage() {
     setOcModels(null)
     setOcError(null)
     let cancelled = false
-    listOpencodeFreeModels()
+    listOpencodeFreeModels(provider === 'opencode-cli' ? 'free' : 'api')
       .then((res) => {
         if (cancelled) return
         if (res.ok && res.models.length > 0) {
           setOcModels(res.models)
-          // si le modèle courant n'existe pas dans le catalogue : bascule sur le modèle validé
-          setModel((cur) => res.models.some((m) => m.id === cur) ? cur : '')
         } else {
           setOcError(res.error ?? 'catalogue vide')
         }
@@ -193,7 +191,7 @@ export function SettingsPage() {
               htmlFor="llm-model"
               hint={
                 isOpencode
-                  ? 'Catalogue OpenCode : modèles gratuits et Big Pickle ; disponibilité selon le fournisseur.'
+                  ? (isOpencodeCli ? 'Modèles gratuits via OpenCode CLI, selon disponibilité.' : 'Modèles OpenCode API compatibles chat ; facturation ou abonnement selon le fournisseur.')
                   : 'ex. gpt-4o-mini, gemini-2.0-flash, claude-sonnet-4-5, deepseek-chat…'
               }
             >
@@ -204,11 +202,12 @@ export function SettingsPage() {
                   </div>
                 ) : ocModels == null ? (
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-400">
-                    Chargement du catalogue des modèles free…
+                    Chargement du catalogue des modèles…
                   </div>
                 ) : (
                   <Select id="llm-model" value={model} onChange={(e) => setModel(e.target.value)}>
                     <option value="">— Choisir un modèle —</option>
+                    {model && !ocModels.some((m) => m.id === model) && <option value={model}>{model} (actif · hors catalogue)</option>}
                     {ocModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name} — {m.id}
@@ -231,6 +230,7 @@ export function SettingsPage() {
                       }
                     }}
                   >
+                    <option value="">— Choisir un modèle —</option>
                     {isCustomModel && model && <option value={model}>{model} (actif)</option>}
                     {curated!.map((m) => (
                       <option key={m.id} value={m.id}>
@@ -263,7 +263,10 @@ export function SettingsPage() {
                   </p>
                 </div>
               ) : (
-                <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} />
+                <div className="flex flex-col gap-1.5">
+                  <Input id="llm-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Identifiant du modèle" />
+                  {modelWarning && <p className="text-xs text-amber-700">{modelWarning}</p>}
+                </div>
               )}
             </Field>
             {provider === 'opencode' && <p className="sm:col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">L’API OpenCode Console hors OpenCode ne donne pas accès aux modèles chat gratuits. Utilisez un modèle autorisé avec une clé valide ; les modèles gratuits restent disponibles dans OpenCode selon le catalogue et les conditions du fournisseur.</p>}

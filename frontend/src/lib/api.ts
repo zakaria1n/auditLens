@@ -210,9 +210,9 @@ export interface OpencodeFreeModel {
   structured_output: boolean
 }
 
-export function listOpencodeFreeModels() {
+export function listOpencodeFreeModels(mode: 'free' | 'api' = 'free') {
   return request<{ ok: boolean; models: OpencodeFreeModel[]; error?: string }>(
-    '/api/settings/llm/opencode/models',
+    `/api/settings/llm/opencode/models?mode=${mode}`,
   )
 }
 
@@ -221,17 +221,15 @@ export interface ProviderModel {
   name: string
 }
 
-/** Modèles pour un provider : LIVE depuis l'API du provider quand une clé
- * est disponible (référence absolue), sinon suggestions statiques vérifiées.
+/** Modèles pour un provider : liste live filtrée ou suggestions documentées.
  * source: 'live' | 'curated' | 'none' ; warning présent si le live a échoué. */
 export function listProviderModels(provider: string, apiKey?: string, baseUrl?: string | null) {
-  const params = new URLSearchParams({ provider })
-  if (apiKey) params.set('api_key', apiKey)
-  if (baseUrl) params.set('base_url', baseUrl)
   return request<{
     ok: boolean; provider: string; source: string
     models: ProviderModel[]; note: string; warning?: string; detail?: string
-  }>(`/api/settings/llm/models?${params.toString()}`)
+  }>('/api/settings/llm/models', {
+    method: 'POST', body: JSON.stringify({ provider, api_key: apiKey, base_url: baseUrl }),
+  })
 }
 
 export function listReports(q?: string) {

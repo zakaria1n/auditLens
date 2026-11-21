@@ -6,6 +6,7 @@ import type {
   ProcessDiagramSpec, RelationshipGraphSpec, TimelineSpec, VizSpec,
 } from '../schemas/viz'
 import { specToText } from '../schemas/viz'
+import { layoutGraph } from './graphLayout'
 import type { VizSelection } from '../interactions/selection'
 
 /** Interactions fournies par le chat (Phase 4 : handoff structuré vers l'agent). */
@@ -312,22 +313,11 @@ const EDGE_STYLES: Record<string, { stroke: string; dash?: string }> = {
 }
 
 export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGraphSpec; callbacks?: VizCallbacks }) {
-  const W = 560
-  const H = 240
-  const positions = new Map<string, { x: number; y: number }>()
-  const cols = Math.ceil(Math.sqrt(spec.nodes.length))
-  spec.nodes.forEach((node, i) => {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const rows = Math.ceil(spec.nodes.length / cols)
-    positions.set(node.id, {
-      x: cols === 1 ? W / 2 : 70 + (col / (cols - 1)) * (W - 140),
-      y: rows === 1 ? H / 2 : 50 + (row / (rows - 1)) * (H - 100),
-    })
-  })
+  const { width: W, height: H, nodeHeight, positions } = layoutGraph(spec.nodes)
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={specToText(spec)}>
+      <div className="max-h-[32rem] overflow-auto rounded-lg bg-slate-50/70" aria-label="Diagramme défilable">
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-none" role="group" aria-label={specToText(spec)}>
         {spec.edges.map((edge, i) => {
           const a = positions.get(edge.source)
           const b = positions.get(edge.target)
@@ -349,7 +339,7 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
                 <title>{`${edge.source} → ${edge.target}${edge.label ? ` · ${edge.label}` : ''}${edge.status && edge.status !== 'ok' ? ` (${edge.status})` : ''}`}</title>
               </line>
               {edge.label && (
-                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} textAnchor="middle" fontSize="9" fill="#8a93a6">
+                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} textAnchor="middle" fontSize="12" fill="#536079" paintOrder="stroke" stroke="#f8fafc" strokeWidth="4" strokeLinejoin="round">
                   {edge.label}
                 </text>
               )}
@@ -362,22 +352,32 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
           return (
             <g
               key={node.id}
-              className="cursor-pointer"
+              className="cursor-pointer focus:outline-none"
+              role="button"
+              tabIndex={0}
+              aria-label={node.label}
               onClick={() =>
                 callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label })
               }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label })
+                }
+              }}
             >
-              <circle cx={pos.x} cy={pos.y} r="17" fill="#f4f3ff" stroke="#5046c9" strokeWidth="1.4" />
-              <text x={pos.x} y={pos.y + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#2c3449">
-                {node.label.length > 9 ? `${node.label.slice(0, 8)}…` : node.label}
+              <rect x={pos.x - 99} y={pos.y - nodeHeight / 2} width="198" height={nodeHeight} rx="14" fill="#fff" stroke="#8378d7" strokeWidth="1.5" />
+              <text x={pos.x} y={pos.y - (pos.lines.length - 1) * 9.5 + 5} textAnchor="middle" fontSize="14" fontWeight="600" fill="#2c3449">
+                {pos.lines.map((line, index) => <tspan key={index} x={pos.x} dy={index === 0 ? 0 : 19}>{line}</tspan>)}
               </text>
               <title>{node.label}{node.kind ? ` (${node.kind})` : ''}</title>
             </g>
           )
         })}
       </svg>
+      </div>
       <ul className="mt-1 flex flex-wrap gap-3 text-[10px] text-ink-400">
-        <li className="flex items-center gap-1"><span className="h-0.5 w-4 bg-brand-600" aria-hidden="true" /> lien vérifié</li>
+        <li className="flex items-center gap-1"><span className="h-0.5 w-4 bg-brand-600" aria-hidden="true" /> lien</li>
         <li className="flex items-center gap-1"><span className="h-0.5 w-4 border-t border-dashed border-amber-600" aria-hidden="true" /> lien manquant</li>
         <li className="flex items-center gap-1"><span className="h-0.5 w-4 bg-red-400" aria-hidden="true" /> contradiction</li>
       </ul>
