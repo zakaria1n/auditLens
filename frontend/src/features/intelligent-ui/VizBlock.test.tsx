@@ -11,6 +11,40 @@ const barSpec = JSON.stringify({
 })
 
 describe('VizBlock — rendu sûr', () => {
+  it('sélectionne une relation au clavier sans appeler le modèle', async () => {
+    const onSelect = vi.fn(), onExplainSelection = vi.fn()
+    render(<VizBlock raw={{ version: 1, type: 'relationship_graph', title: 'Flux', nodes: [{ id: 'a', label: 'Agent' }, { id: 'b', label: 'Outil' }], edges: [{ source: 'a', target: 'b', label: 'appel' }] }} callbacks={{ onSelect, onExplainSelection }} />)
+    const edge = screen.getByRole('button', { name: /Lien a vers b/ })
+    edge.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ edge: expect.objectContaining({ source: 'a', target: 'b' }) }))
+    expect(onExplainSelection).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Expliquer cet élément' }))
+    expect(onExplainSelection).toHaveBeenCalledOnce()
+  })
+
+  it('compare deux nœuds sélectionnés uniquement après action explicite', async () => {
+    const onExplainSelection = vi.fn()
+    render(<VizBlock raw={{ version: 1, type: 'relationship_graph', title: 'Flux', nodes: [{ id: 'a', label: 'Agent' }, { id: 'b', label: 'Outil' }], edges: [{ source: 'a', target: 'b' }] }} callbacks={{ onExplainSelection }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Agent' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Outil' }))
+    expect(onExplainSelection).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Comparer ces éléments' }))
+    expect(onExplainSelection).toHaveBeenCalledWith(expect.objectContaining({ nodes: [{ id: 'a', label: 'Agent' }, { id: 'b', label: 'Outil' }] }))
+    await userEvent.click(screen.getByRole('button', { name: 'Effacer la sélection' }))
+    expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('filtre et trie un tableau localement', async () => {
+    const onSelect = vi.fn()
+    render(<VizBlock raw={{ version: 1, type: 'data_table', title: 'Table', columns: ['nom', 'quantité'], rows: [{ nom: 'B', quantité: 2 }, { nom: 'A', quantité: 1 }] }} callbacks={{ onSelect }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Trier par nom' }))
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('A')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Filtrer les lignes du tableau' }), 'B')
+    expect(screen.queryByText('A')).not.toBeInTheDocument()
+    expect(screen.getByText('B')).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
   it('tente une seule réparation et vérifie la réponse avant rendu', async () => {
     const repair = vi.fn().mockResolvedValue({ version: 2, type: 'composition', mode: 'conceptual', children: [{ type: 'heading', text: 'Architecture' }] })
     render(<VizBlock raw={{ version: 2, type: 'composition', mode: 'conceptual', children: [{ type: 'heading', text: 17 }] }} callbacks={{ onRepairPresentation: repair }} />)

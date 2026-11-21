@@ -23,7 +23,7 @@ export interface ToolCallPart {
   duration_ms?: number
 }
 
-export type ChatPart = TextPart | ToolCallPart
+export type ChatPart = TextPart | ToolCallPart | { type: 'explanation_context'; version: 1 }
 
 export interface ChatMsg {
   id: string
@@ -139,6 +139,7 @@ export interface TurnBody {
   content?: string | null
   mode?: 'new' | 'edit' | 'regenerate'
   target_message_id?: string | null
+  explanation_only?: boolean
 }
 
 /** Tour de conversation en SSE : chaque événement backend est transmis à onEvent. */

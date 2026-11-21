@@ -19,6 +19,7 @@ describe('composition déclarative', () => {
       { type: 'paragraph', text: 'https://exemple.test/x' },
       { type: 'visualization', spec: { ...graph, evidence_refs: ['ev_abcd1234'] } },
       { type: 'button', action: 'delete' },
+      { type: 'tabs', items: [{ label: 'X', children: [{ type: 'heading', text: 'Y' }], action: 'fetch' }] },
     ]) expect(validateComposition({ ...root, children: [child] }).ok).toBe(false)
     expect(validateComposition({ ...root, mode: 'evidence', children: [{ type: 'heading', text: 'Résultat' }] }).ok).toBe(false)
   })

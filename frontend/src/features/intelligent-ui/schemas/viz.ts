@@ -88,7 +88,7 @@ export type GraphEdgeStatus = 'ok' | 'missing' | 'conflict'
 
 export interface RelationshipGraphSpec extends VizBase {
   type: 'relationship_graph'
-  nodes: Array<{ id: string; label: string; kind?: string }>
+  nodes: Array<{ id: string; label: string; kind?: string; detail?: string }>
   edges: Array<{ source: id_field; target: id_field; label?: string; status?: GraphEdgeStatus }>
 }
 
@@ -285,7 +285,8 @@ function validateRelationshipGraph(raw: Record<string, unknown>): VizValidation 
     ids.add(id)
     if (!safeString(node.label, VIZ_LIMITS.note)) return fail('libellé de nœud invalide ou trop long')
     if (node.kind !== undefined && !safeString(node.kind, VIZ_LIMITS.title)) return fail('type de nœud invalide')
-    if (Object.keys(node).some((k) => !['id', 'label', 'kind'].includes(k))) return fail('clés de nœud inconnues')
+    if (node.detail !== undefined && !safeString(node.detail, VIZ_LIMITS.note)) return fail('détail de nœud invalide')
+    if (Object.keys(node).some((k) => !['id', 'label', 'kind', 'detail'].includes(k))) return fail('clés de nœud inconnues')
   }
   const edges = raw.edges
   if (!Array.isArray(edges) || edges.length === 0 || edges.length > VIZ_LIMITS.edges) {

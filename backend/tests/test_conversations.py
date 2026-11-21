@@ -12,6 +12,7 @@ import pytest
 from app.main import app
 
 from app.agent.providers.base import ProviderToolCall
+from app.agent.providers.base import LLMResponse
 
 from .conftest import upload_csv
 
@@ -61,6 +62,35 @@ async def test_thread_crud_and_text_stream(client):
 
     listing = (await client.get("/api/conversations")).json()["threads"]
     assert any(t["id"] == thread["id"] for t in listing)
+
+
+async def test_explanation_action_cannot_start_an_audit_even_if_model_requests_it(client, monkeypatch):
+    class MisbehavingProvider:
+        provider_id = 'test'
+        model_id = 'test'
+        calls = 0
+
+        async def stream_chat(self, system, messages, tools=None):
+            assert tools == []
+            self.calls += 1
+            if self.calls == 1:
+                yield LLMResponse(tool_calls=[ProviderToolCall(id='x', name='create_audit', arguments={'source_ids': [], 'objective': 'test'})])
+            else:
+                yield LLMResponse(content='Explication')
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr('app.agent.chat.build_provider', lambda *args, **kwargs: MisbehavingProvider())
+    thread = await create_thread(client)
+    events = await stream_turn(client, thread['id'], {'content': 'Explique cette étape', 'explanation_only': True})
+    blocked = next(e for e in events if e['type'] == 'tool_result')
+    assert blocked['status'] == 'error'
+    assert not (await client.get(f"/api/conversations/{thread['id']}" )).json()['thread']['mission_ids']
+    assistant = next(e['message'] for e in events if e['type'] == 'message' and e['message']['role'] == 'assistant')
+    regenerated = await stream_turn(client, thread['id'], {'mode': 'regenerate', 'target_message_id': assistant['id']})
+    assert next(e for e in regenerated if e['type'] == 'tool_result')['status'] == 'error'
+    assert not (await client.get(f"/api/conversations/{thread['id']}" )).json()['thread']['mission_ids']
 
 
 async def test_chat_audit_creates_mission_run_and_followups(client, tmp_path):

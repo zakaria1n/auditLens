@@ -46,6 +46,7 @@ class StreamBody(BaseModel):
     content: str | None = None
     mode: str = "new"  # new | edit | regenerate
     target_message_id: str | None = None
+    explanation_only: bool = False
 
 
 class PresentationRepairBody(BaseModel):
@@ -206,6 +207,7 @@ async def stream_turn(thread_id: str, body: StreamBody, request: Request):
         try:
             async for event in service.run_turn(
                 d, thread, body.content, mode=body.mode, target_message_id=body.target_message_id,
+                explanation_only=body.explanation_only,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ValueError as exc:

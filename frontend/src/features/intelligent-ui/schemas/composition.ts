@@ -6,6 +6,7 @@ export type CompositionNode =
   | { type: 'divider' }
   | { type: 'stack' | 'row' | 'grid' | 'section'; title?: string; children: CompositionNode[] }
   | { type: 'accordion'; title: string; children: CompositionNode[] }
+  | { type: 'tabs'; items: Array<{ label: string; children: CompositionNode[] }> }
   | { type: 'visualization'; spec: VizSpec }
 
 export type CompositionSpec = { version: 2; type: 'composition'; mode: 'conceptual'; children: CompositionNode[] }
@@ -46,6 +47,21 @@ export function validateComposition(raw: unknown): CompositionValidation {
       return { type: node.type as 'heading' | 'paragraph' | 'caption' | 'code', text: node.text }
     }
     if (node.type === 'divider') return hasOnly(node, ['type']) ? { type: 'divider' } : reject(path, 'divider sans propriétés supplémentaires', node, 'Supprimez les propriétés inconnues.')
+    if (node.type === 'tabs') {
+      if (!hasOnly(node, ['type', 'items']) || !Array.isArray(node.items) || node.items.length < 1 || node.items.length > 8) return reject(path, '1 à 8 onglets', node.items, 'Fournissez une liste d’onglets.')
+      const items: Array<{ label: string; children: CompositionNode[] }> = []
+      for (const [index, item] of node.items.entries()) {
+        if (!isObject(item) || !hasOnly(item, ['label', 'children']) || !validText(item.label, 140) || !Array.isArray(item.children) || !item.children.length || item.children.length > 24) return reject(`${path}.items[${index}]`, 'label et children', item, 'Corrigez l’onglet.')
+        const children: CompositionNode[] = []
+        for (const [childIndex, child] of item.children.entries()) {
+          const parsed = parse(child, depth + 1, `${path}.items[${index}].children[${childIndex}]`)
+          if (!parsed) return null
+          children.push(parsed)
+        }
+        items.push({ label: item.label, children })
+      }
+      return { type: 'tabs', items }
+    }
     if (layoutTypes.has(node.type)) {
       if (!hasOnly(node, ['type', 'title', 'children']) || !Array.isArray(node.children) || !node.children.length || node.children.length > 24) return reject(path, 'type, title optionnel, 1 à 24 children', node.children, 'Corrigez les propriétés ou la liste children.')
       if (node.title !== undefined && !validText(node.title, 140)) return reject(`${path}.title`, 'titre sûr non vide de 140 caractères maximum', node.title, 'Corrigez le titre.')

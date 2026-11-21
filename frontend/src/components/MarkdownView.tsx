@@ -19,6 +19,7 @@ export interface MarkdownViewProps {
   markdown: string
   vizCallbacks?: VizCallbacks
   isStreaming?: boolean
+  messageId?: string
 }
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
@@ -52,7 +53,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
-export function MarkdownView({ markdown, vizCallbacks, isStreaming = false }: MarkdownViewProps) {
+export function MarkdownView({ markdown, vizCallbacks, isStreaming = false, messageId }: MarkdownViewProps) {
   const lines = markdown.split('\n')
   const blocks: ReactNode[] = []
   let i = 0
@@ -87,7 +88,8 @@ export function MarkdownView({ markdown, vizCallbacks, isStreaming = false }: Ma
           </div>)
           continue
         }
-        blocks.push(<VizBlock key={`b${key++}`} raw={raw} callbacks={vizCallbacks} />)
+        const compositionId = `viz-${key}`
+        blocks.push(<VizBlock key={`b${key++}`} raw={raw} callbacks={vizCallbacks} messageId={messageId} compositionId={compositionId} />)
         continue
       }
       const code = codeLines.join('\n')

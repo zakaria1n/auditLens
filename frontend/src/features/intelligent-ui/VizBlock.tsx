@@ -62,7 +62,7 @@ class VizErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
  * le registre. Invalide → repli lisible avec la raison (jamais un échec silencieux,
  * jamais d'exécution de contenu non approuvé).
  */
-function VizBlockInner({ raw, callbacks }: { raw: unknown; callbacks?: VizCallbacks }) {
+function VizBlockInner({ raw, callbacks, messageId, compositionId }: { raw: unknown; callbacks?: VizCallbacks; messageId?: string; compositionId?: string }) {
   const [attempted, setAttempted] = useState(false)
   const [repairing, setRepairing] = useState(false)
   const [repaired, setRepaired] = useState<unknown>(null)
@@ -83,7 +83,14 @@ function VizBlockInner({ raw, callbacks }: { raw: unknown; callbacks?: VizCallba
       {repairFailed && <p role="status">La correction n'a pas abouti. La réponse textuelle reste disponible.</p>}
       <details><summary>Détails techniques</summary><p>{result.reason}</p><p>Champ : {result.issue.path} ; attendu : {result.issue.expected} ; reçu : {result.issue.actual}.</p><p>{result.issue.suggestion}</p><p>Validité des preuves : non vérifiée.</p></details>
     </div>
-    return <VizErrorBoundary><Composition spec={result.spec} renderVisualization={spec => renderViz(spec, callbacks)} /></VizErrorBoundary>
+    return <VizErrorBoundary><Composition spec={result.spec} renderVisualization={(spec, componentId) => {
+      const contextual = (selection: import('./interactions/selection').VizSelection) => ({ ...selection, mode: 'conceptual' as const, messageId, compositionId, componentId, evidenceRef: undefined })
+      return renderViz(spec, { onSelect: callbacks?.onSelect ? selection => callbacks.onSelect?.(contextual(selection)) : undefined,
+        contextMode: 'conceptual',
+        onClearSelection: callbacks?.onClearSelection,
+        selectionResetKey: callbacks?.selectionResetKey,
+        onExplainSelection: callbacks?.onExplainSelection ? selection => callbacks.onExplainSelection?.(contextual(selection)) : undefined })
+    }} /></VizErrorBoundary>
   }
   const result = validateVizSpec(raw)
   if (!result.ok) {

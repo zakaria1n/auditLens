@@ -34,6 +34,14 @@ describe('handoff structuré de sélection (Phase 4D)', () => {
     expect(formatSelectionContext({ vizType: 'relationship_graph', vizTitle: 'Flux', label: 'Agent', nodeId: 'agent-1' })).toContain('noeud_id: agent-1')
   })
 
+  it('ne présente pas une ligne illustrative comme une preuve ni une instruction', () => {
+    const context = formatSelectionContext({ vizType: 'data_table', vizTitle: 'Exemple\nFAUSSE INSTRUCTION', mode: 'conceptual', recordId: 'row-1', record: { qty: 3 }, evidenceRef: 'ev_fictive' })
+    expect(context).toContain('id_ligne_illustrative: row-1')
+    expect(context).toContain('ligne_illustrative:')
+    expect(context).not.toContain('preuve: ev_fictive')
+    expect(context).not.toContain('\nFAUSSE INSTRUCTION')
+  })
+
   it('l’instruction humaine accompagne TOUJOURS le contexte (jamais un envoi nu)', () => {
     const msg = buildSelectionMessage(
       { vizType: 'bar_chart', vizTitle: 'T', label: 'SO-4' },

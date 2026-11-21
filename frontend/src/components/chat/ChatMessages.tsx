@@ -229,7 +229,7 @@ function AssistantMessage({
         })}
         {text && (
           <div className="text-[15px] leading-relaxed text-slate-800 [&_p]:my-1.5 [&_li]:my-0.5">
-            <MarkdownView markdown={text} vizCallbacks={vizCallbacks} isStreaming={message.status === 'running'} />
+            <MarkdownView markdown={text} vizCallbacks={vizCallbacks} isStreaming={message.status === 'running'} messageId={message.id} />
           </div>
         )}
         {message.status === 'running' && toolParts.length === 0 && !text && (

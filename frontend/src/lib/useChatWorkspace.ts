@@ -225,10 +225,10 @@ export function useChatWorkspace() {
   )
 
   const send = useCallback(
-    async (content: string, threadId?: string) => {
+    async (content: string, threadId?: string, explanationOnly = false) => {
       const targetId = threadId ?? activeId
       if (!targetId || isRunning || !content.trim()) return
-      await runTurn(targetId, { content: content.trim(), mode: 'new' })
+      await runTurn(targetId, { content: content.trim(), mode: 'new', explanation_only: explanationOnly })
     },
     [activeId, isRunning, runTurn],
   )

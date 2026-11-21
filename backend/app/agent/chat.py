@@ -133,7 +133,7 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-CHAT_PRESENTATION_PROMPT_VERSION = "composition-v2-2026-11-21-2"
+CHAT_PRESENTATION_PROMPT_VERSION = "composition-v2-2026-11-21-4"
 
 CHAT_SYSTEM = """Tu es l'assistant d'audit d'AuditLens. Tu aides un auditeur IT professionnel à piloter des investigations réelles sur ses systèmes.
 
@@ -147,11 +147,11 @@ RÈGLES NON NÉGOCIABLES :
 - Réponds dans la langue de l'auditeur (français par défaut), de façon concise et professionnelle.
 
 PRÉSENTATIONS VISUELLES (facultatif) :
-Réponds en texte quand cela suffit. Pour une explication visuelle CONCEPTUELLE, tu peux placer un ou plusieurs blocs fenced `viz` contenant chacun un JSON valide : {"version":2,"type":"composition","mode":"conceptual","children":[...]}. Éléments autorisés : heading, paragraph, caption, code (champ text) ; divider ; stack, row, grid, section (children, title optionnel) ; accordion (title et children) ; visualization (spec v1 ci-dessous). Limites : profondeur 5, 80 éléments au total, 24 enfants par section. Les graphiques conceptuels et exemples hypothétiques sont illustratifs, jamais des conclusions d'audit. Ne fournis pas de preuves, URL, HTML, CSS, code exécutable ou action dans une composition.
+Réponds en texte quand cela suffit. Pour une explication visuelle CONCEPTUELLE, tu peux placer un ou plusieurs blocs fenced `viz` contenant chacun un JSON valide : {"version":2,"type":"composition","mode":"conceptual","children":[...]}. Éléments autorisés : heading, paragraph, caption, code (champ text) ; divider ; stack, row, grid, section (children, title optionnel) ; accordion (title et children) ; tabs (items [{label,children}]) ; visualization (spec v1 ci-dessous). Limites : profondeur 5, 80 éléments au total, 24 enfants par section. Les graphiques conceptuels et exemples hypothétiques sont illustratifs, jamais des conclusions d'audit. Ne fournis pas de preuves, URL, HTML, CSS, code exécutable ou action dans une composition.
 
 Exemple de structure (choisis librement les composants et leur nombre) : {"version":2,"type":"composition","mode":"conceptual","children":[{"type":"heading","text":"Titre"},{"type":"visualization","spec":{"version":1,"type":"process_diagram","title":"Étapes","steps":[{"id":"a","label":"Étape A"},{"id":"b","label":"Étape B"}]}},{"type":"accordion","title":"Détails","children":[{"type":"paragraph","text":"Explication."}]}]}. Chaque bloc doit être du JSON complet, sans commentaire ni propriétés supplémentaires.
 
-Visualisations v1 réutilisables dans visualization.spec : chaque spéc a version=1, type et title. Types : data_table (columns: liste de chaînes ; rows: objets dont les clés sont les colonnes ; row_ids optionnels) ; bar_chart (bars [{label,value}], unit optionnel) ; line_chart (series [{name,points:[{x,y}]}]) ; comparison (items [{label,left,right}], left_label, right_label : left/right nombres uniquement ; pour comparer des textes utilise row et paragraph) ; relationship_graph (nodes [{id,label,kind}], edges [{source,target,label,status:ok|missing|conflict}]) ; process_diagram (steps [{id,label,detail}], direction LR|TB|RL|BT) ; timeline (events [{label,at,detail,kind}]) ; kpi_summary (metrics [{label,value,unit,hint}]). Les identifiants de liens correspondent aux nœuds. Un bloc v1 autonome est également possible. Pour les faits métier, n'invente jamais de valeurs ou de preuve : utilise exclusivement les résultats autorisés et explique toute donnée manquante. N'affirme pas que les visualisations v1 ont été vérifiées automatiquement.
+Visualisations v1 réutilisables dans visualization.spec : chaque spéc a version=1, type et title. Types : data_table (columns: liste de chaînes ; rows: objets dont les clés sont les colonnes ; row_ids optionnels) ; bar_chart (bars [{label,value}], unit optionnel) ; line_chart (series [{name,points:[{x,y}]}]) ; comparison (items [{label,left,right}], left_label, right_label : left/right nombres uniquement ; pour comparer des textes utilise row et paragraph) ; relationship_graph (nodes [{id,label,kind,detail}], edges [{source,target,label,status:ok|missing|conflict}]) ; process_diagram (steps [{id,label,detail}], direction LR|TB|RL|BT) ; timeline (events [{label,at,detail,kind}]) ; kpi_summary (metrics [{label,value,unit,hint}]). Les identifiants de liens correspondent aux nœuds. Un bloc v1 autonome est également possible. Pour les faits métier, n'invente jamais de valeurs ou de preuve : utilise exclusivement les résultats autorisés et explique toute donnée manquante. N'affirme pas que les visualisations v1 ont été vérifiées automatiquement.
 
 
 ÉTAT DES MISSIONS/RUNS DE CETTE CONVERSATION :
@@ -174,7 +174,7 @@ class ChatService:
 
     async def run_turn(
         self, d: AppDeps, thread: ConversationThread, content: str | None,
-        mode: str = "new", target_message_id: str | None = None,
+        mode: str = "new", target_message_id: str | None = None, explanation_only: bool = False,
     ) -> AsyncIterator[dict]:
         repo = d.repo
         controls = d.chat_controls
@@ -195,6 +195,8 @@ class ChatService:
         user_msg: ChatMessage | None = None
         if mode == "regenerate":
             parent_for_assistant = target.parent_id
+            parent = by_id.get(parent_for_assistant)
+            explanation_only = explanation_only or bool(parent and any(p.get('type') == 'explanation_context' and p.get('version') == 1 for p in parent.parts))
         else:
             if not (content or "").strip():
                 raise ValueError("contenu vide")
@@ -203,7 +205,7 @@ class ChatService:
             base_parent = target.parent_id if mode == "edit" else thread.head_message_id
             user_msg = ChatMessage(
                 id=new_id("msg"), thread_id=thread.id, parent_id=base_parent,
-                role=ChatRole.user, parts=[{"type": "text", "text": content.strip()}],
+                role=ChatRole.user, parts=[{"type": "text", "text": content.strip()}, *([{"type": "explanation_context", "version": 1}] if explanation_only else [])],
             )
             await repo.create_chat_message(user_msg)
             parent_for_assistant = user_msg.id
@@ -273,7 +275,8 @@ class ChatService:
                     ], "total_redactions": sum(all_counts.values())}
                 resp: LLMResponse | None = None
                 round_text: dict | None = None
-                async for item in provider.stream_chat(sanitized_system, sanitized_canon, tools=CHAT_TOOLS):
+                allowed_tools = [] if explanation_only else CHAT_TOOLS
+                async for item in provider.stream_chat(sanitized_system, sanitized_canon, tools=allowed_tools):
                     if controls.get(thread.id) == "cancel":
                         cancelled = True
                         break
@@ -311,7 +314,10 @@ class ChatService:
                         yield {"type": "tool_call", "id": t.id, "tool": t.name,
                                "args": redact(t.arguments or {})}
                         t0 = time.monotonic()
-                        outcome = await self._execute_chat_tool(d, thread, t, active_ids)
+                        if explanation_only:
+                            outcome = {'status': 'error', 'error': "Outils désactivés pour une explication conceptuelle."}
+                        else:
+                            outcome = await self._execute_chat_tool(d, thread, t, active_ids)
                         duration_ms = int((time.monotonic() - t0) * 1000)
                         part = {
                             "type": "tool_call", "id": t.id, "tool": t.name,

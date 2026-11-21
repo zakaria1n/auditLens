@@ -8,6 +8,7 @@ import type {
 import { specToText } from '../schemas/viz'
 import { layoutGraph } from './graphLayout'
 import type { VizSelection } from '../interactions/selection'
+import { dispatchAction } from '../interactions/actions'
 
 /** Interactions fournies par le chat (Phase 4 : handoff structuré vers l'agent). */
 export interface VizCallbacks {
@@ -17,6 +18,10 @@ export interface VizCallbacks {
   /** investigation immédiate : le message part avec le contexte structuré */
   onInvestigateSelection?: (selection: VizSelection) => void
   onRepairPresentation?: (raw: Record<string, unknown>, issue: Record<string, unknown>) => Promise<unknown>
+  onExplainSelection?: (selection: VizSelection) => void
+  onClearSelection?: () => void
+  selectionResetKey?: string | number
+  contextMode?: 'conceptual'
 }
 
 function EvidenceChips({ refs, onOpenEvidence }: { refs?: string[]; onOpenEvidence?: (id: string) => void }) {
@@ -27,7 +32,7 @@ function EvidenceChips({ refs, onOpenEvidence }: { refs?: string[]; onOpenEviden
         <button
           key={ref}
           type="button"
-          onClick={() => onOpenEvidence?.(ref)}
+          onClick={() => dispatchAction('open_evidence', { open_evidence: () => onOpenEvidence?.(ref) })}
           className="rounded-md border border-brand-200 bg-brand-50 px-1.5 py-0.5 font-mono text-[10px] text-brand-700 transition-colors hover:bg-brand-100"
           title="Ouvrir la preuve source"
         >
@@ -66,11 +71,24 @@ function fmt(n: number, unit?: string): string {
   return unit ? `${s} ${unit}` : s
 }
 
+function useResettableSelection<T>(resetKey: string | number | undefined) {
+  const [state, setState] = useState<{ key: string | number | undefined; value: T | null }>({ key: resetKey, value: null })
+  const selected = state.key === resetKey ? state.value : null
+  const setSelected = (value: T | null) => setState({ key: resetKey, value })
+  return [selected, setSelected] as const
+}
+
 // ---------------------------------------------------------------- data_table
 
 export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbacks?: VizCallbacks }) {
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useResettableSelection<number>(callbacks?.selectionResetKey)
   const [filter, setFilter] = useState('')
+  const [sort, setSort] = useState<{ column: string; ascending: boolean } | null>(null)
+  const selectRow = (row: DataTableSpec['rows'][number], index: number) => dispatchAction('select_row', { select_row: () => {
+    if (selected === index) { setSelected(null); callbacks?.onClearSelection?.(); return }
+    setSelected(index)
+    callbacks?.onSelect?.({ vizType: 'data_table', vizTitle: spec.title, record: row, recordId: spec.row_ids?.[index], ...(callbacks?.contextMode === 'conceptual' ? { rowId: `row-${index}` } : {}) })
+  } })
   const needle = filter.trim().toLowerCase()
   const visibleRows = needle
     ? spec.rows
@@ -79,11 +97,16 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
           Object.values(row).some((v) => v !== null && String(v).toLowerCase().includes(needle)),
         )
     : spec.rows.map((row, index) => ({ row, index }))
+  if (sort) visibleRows.sort((a, b) => {
+    const left = a.row[sort.column], right = b.row[sort.column]
+    const comparison = typeof left === 'number' && typeof right === 'number' ? left - right : String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true })
+    return sort.ascending ? comparison : -comparison
+  })
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
       <input
         value={filter}
-        onChange={(e) => setFilter(e.target.value)}
+        onChange={(e) => { const value = e.target.value; dispatchAction('filter_table', { filter_table: () => setFilter(value) }) }}
         placeholder="Filtrer localement (aucune requête LLM)…"
         aria-label="Filtrer les lignes du tableau"
         className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-ink-700 placeholder:text-ink-300 focus:border-brand-300 focus:outline-none"
@@ -94,7 +117,9 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
             <tr>
               {spec.columns.map((c) => (
                 <th key={c} scope="col" className="whitespace-nowrap border-b border-slate-200 px-2.5 py-2 font-semibold text-ink-600">
-                  {c}
+                  <button type="button" onClick={() => dispatchAction('sort_table', { sort_table: () => setSort(current => ({ column: c, ascending: current?.column === c ? !current.ascending : true })) })} aria-label={`Trier par ${c}`}>
+                    {c}{sort?.column === c ? (sort.ascending ? ' ↑' : ' ↓') : ''}
+                  </button>
                 </th>
               ))}
               <th className="border-b border-slate-200 px-2 py-2">
@@ -107,11 +132,7 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
               <tr
                 key={i}
                 onClick={() => {
-                  setSelected(selected === i ? null : i)
-                  callbacks?.onSelect?.({
-                    vizType: 'data_table', vizTitle: spec.title,
-                    record: row, recordId: spec.row_ids?.[i],
-                  })
+                  selectRow(row, i)
                 }}
                 className={'cursor-pointer ' + (selected === i ? 'bg-brand-50/70' : 'hover:bg-surface-1')}
                 aria-selected={selected === i}
@@ -124,7 +145,7 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
                 <td className="whitespace-nowrap border-b border-slate-100 px-1 py-1.5 text-right">
                   <button
                     type="button"
-                    onClick={() => setSelected(selected === i ? null : i)}
+                    onClick={(event) => { event.stopPropagation(); selectRow(row, i) }}
                     aria-expanded={selected === i}
                     className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-brand-600 hover:bg-brand-50"
                   >
@@ -139,7 +160,7 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
       {selected !== null && (
         <div className="al-event-in mt-2 rounded-lg border border-brand-200 bg-brand-50/60 p-2.5">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
-            Enregistrement {spec.row_ids?.[selected] ?? `#${selected + 1}`}
+            {callbacks?.contextMode === 'conceptual' ? 'Ligne illustrative' : 'Enregistrement'} {spec.row_ids?.[selected] ?? `#${selected + 1}`}
           </p>
           <dl className="grid grid-cols-[minmax(0,140px)_1fr] gap-x-3 gap-y-1 text-[11px]">
             {spec.columns.map((c) => (
@@ -163,6 +184,7 @@ export function DataTableViz({ spec, callbacks }: { spec: DataTableSpec; callbac
               Investiguer cet enregistrement
             </button>
           )}
+          {callbacks?.onExplainSelection && <button type="button" className="mt-2 text-brand-700 underline" onClick={() => dispatchAction('explain_selection', { explain_selection: () => callbacks.onExplainSelection?.({ vizType: 'data_table', vizTitle: spec.title, record: spec.rows[selected], recordId: spec.row_ids?.[selected], ...(callbacks.contextMode === 'conceptual' ? { rowId: `row-${selected}` } : {}) }) })}>Expliquer cette ligne illustrative</button>}
         </div>
       )}
     </VizFrame>
@@ -176,18 +198,16 @@ export function BarChartViz({ spec, callbacks }: { spec: BarChartSpec; callbacks
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
       <ul className="flex flex-col gap-1.5">
-        {spec.bars.map((bar) => (
-          <li key={bar.label} className="flex items-center gap-2.5">
+        {spec.bars.map((bar, index) => (
+          <li key={index} className="flex items-center gap-2.5">
             <span className="w-[130px] shrink-0 truncate text-right text-[11px] text-ink-500" title={bar.label}>
               {bar.label}
             </span>
             <span className="relative h-5 flex-1 overflow-hidden rounded-md bg-surface-2">
               <button
                 type="button"
-                aria-label={`${bar.label} : ${fmt(bar.value, spec.unit)}. Investiguer`}
-                onClick={() =>
-                  callbacks?.onSelect?.({ vizType: 'bar_chart', vizTitle: spec.title, label: bar.label })
-                }
+                aria-label={`${bar.label} : ${fmt(bar.value, spec.unit)}. ${callbacks?.contextMode === 'conceptual' ? 'Sélectionner' : 'Investiguer'}`}
+                onClick={() => dispatchAction('select_chart', { select_chart: () => callbacks?.onSelect?.({ vizType: 'bar_chart', vizTitle: spec.title, label: bar.label, ...(callbacks?.contextMode === 'conceptual' ? { itemId: `bar-${index}` } : {}) }) })}
                 className="absolute inset-y-0 left-0 rounded-md bg-brand-500/90 transition-colors hover:bg-brand-600"
                 style={{ width: `${Math.max((Math.abs(bar.value) / max) * 100, 2)}%` }}
               />
@@ -270,13 +290,11 @@ export function ComparisonViz({ spec, callbacks }: { spec: ComparisonSpec; callb
         <span className="flex-1 text-right">{spec.right_label}</span>
       </div>
       <ul className="flex flex-col gap-2">
-        {spec.items.map((item) => (
-          <li key={item.label}>
+        {spec.items.map((item, index) => (
+          <li key={index}>
             <button
               type="button"
-              onClick={() =>
-                callbacks?.onSelect?.({ vizType: 'comparison', vizTitle: spec.title, label: item.label })
-              }
+              onClick={() => dispatchAction('select_chart', { select_chart: () => callbacks?.onSelect?.({ vizType: 'comparison', vizTitle: spec.title, label: item.label, ...(callbacks?.contextMode === 'conceptual' ? { itemId: `comparison-${index}` } : {}) }) })}
               className="group grid w-full grid-cols-[130px_1fr] items-center gap-2 rounded-lg text-left hover:bg-surface-1"
               title={`Comparer ${item.label}`}
             >
@@ -315,6 +333,17 @@ const EDGE_STYLES: Record<string, { stroke: string; dash?: string }> = {
 
 export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGraphSpec; callbacks?: VizCallbacks }) {
   const { width: W, height: H, nodeHeight, positions } = layoutGraph(spec.nodes)
+  const [selected, setSelected] = useResettableSelection<VizSelection>(callbacks?.selectionResetKey)
+  const select = (value: VizSelection) => {
+    dispatchAction(value.edge ? 'select_edge' : 'select_node', { [value.edge ? 'select_edge' : 'select_node']: () => {
+      if (callbacks?.onExplainSelection && value.nodeId && value.label) {
+        const previous = selected?.nodes ?? (selected?.nodeId && selected.label ? [{ id: selected.nodeId, label: selected.label }] : [])
+        const nodes = [...previous.filter(node => node.id !== value.nodeId), { id: value.nodeId, label: value.label }].slice(-2)
+        value = { ...value, nodes }
+      }
+      setSelected(value); callbacks?.onSelect?.(value)
+    } })
+  }
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
       <div className="max-h-[32rem] overflow-auto rounded-lg bg-slate-50/70" aria-label="Diagramme défilable">
@@ -325,17 +354,14 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
           if (!a || !b) return null
           const style = EDGE_STYLES[edge.status ?? 'ok']
           return (
-            <g key={i}>
+            <g key={i} role="button" tabIndex={0} className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed={selected?.edgeId === `edge-${i}`} aria-label={`Lien ${edge.source} vers ${edge.target}${edge.label ? ` : ${edge.label}` : ''}`}
+              onClick={() => select({ vizType: 'relationship_graph', vizTitle: spec.title, edgeId: `edge-${i}`, edge: { source: edge.source, target: edge.target, status: edge.status, label: edge.label } })}
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select({ vizType: 'relationship_graph', vizTitle: spec.title, edgeId: `edge-${i}`, edge: { source: edge.source, target: edge.target, status: edge.status, label: edge.label } }) } }}>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth="16" />
               <line
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke={style.stroke} strokeWidth="1.6" strokeDasharray={style.dash}
+                stroke={style.stroke} strokeWidth={selected?.edgeId === `edge-${i}` ? '4' : '1.6'} strokeDasharray={style.dash}
                 className="cursor-pointer"
-                onClick={() =>
-                  callbacks?.onSelect?.({
-                    vizType: 'relationship_graph', vizTitle: spec.title,
-                    edge: { source: edge.source, target: edge.target, status: edge.status, label: edge.label },
-                  })
-                }
               >
                 <title>{`${edge.source} → ${edge.target}${edge.label ? ` · ${edge.label}` : ''}${edge.status && edge.status !== 'ok' ? ` (${edge.status})` : ''}`}</title>
               </line>
@@ -353,21 +379,20 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
           return (
             <g
               key={node.id}
-              className="cursor-pointer focus:outline-none"
+              className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
               role="button"
               tabIndex={0}
               aria-label={node.label}
-              onClick={() =>
-                callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id })
-              }
+              aria-pressed={selected?.nodes?.some(item => item.id === node.id) ?? selected?.nodeId === node.id}
+              onClick={() => select({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id, ...(node.detail || node.kind ? { description: node.detail || node.kind } : {}) })}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
-                  callbacks?.onSelect?.({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id })
+                  select({ vizType: 'relationship_graph', vizTitle: spec.title, label: node.label, nodeId: node.id, ...(node.detail || node.kind ? { description: node.detail || node.kind } : {}) })
                 }
               }}
             >
-              <rect x={pos.x - 99} y={pos.y - nodeHeight / 2} width="198" height={nodeHeight} rx="14" fill="#fff" stroke="#8378d7" strokeWidth="1.5" />
+              <rect x={pos.x - 99} y={pos.y - nodeHeight / 2} width="198" height={nodeHeight} rx="14" fill={(selected?.nodes?.some(item => item.id === node.id) ?? selected?.nodeId === node.id) ? '#ecebfd' : '#fff'} stroke="#8378d7" strokeWidth={(selected?.nodes?.some(item => item.id === node.id) ?? selected?.nodeId === node.id) ? '3' : '1.5'} />
               <text x={pos.x} y={pos.y - (pos.lines.length - 1) * 9.5 + 5} textAnchor="middle" fontSize="14" fontWeight="600" fill="#2c3449">
                 {pos.lines.map((line, index) => <tspan key={index} x={pos.x} dy={index === 0 ? 0 : 19}>{line}</tspan>)}
               </text>
@@ -377,6 +402,12 @@ export function RelationshipGraphViz({ spec, callbacks }: { spec: RelationshipGr
         })}
       </svg>
       </div>
+      {selected && <div className="mt-3 rounded-lg bg-brand-50 p-3 text-xs text-ink-700">
+        <p>{selected.nodes && selected.nodes.length > 1 ? selected.nodes.map(node => node.label).join(' / ') : selected.label ?? `${selected.edge?.source} → ${selected.edge?.target}`}</p>
+        {selected.description && <p>{selected.description}</p>}
+        {callbacks?.onExplainSelection && <button type="button" onClick={() => dispatchAction('explain_selection', { explain_selection: () => callbacks.onExplainSelection?.(selected) })} className="mt-2 font-semibold text-brand-700 underline">{selected.nodes && selected.nodes.length > 1 ? 'Comparer ces éléments' : 'Expliquer cet élément'}</button>}
+        <button type="button" onClick={() => dispatchAction('clear_selection', { clear_selection: () => { setSelected(null); callbacks?.onClearSelection?.() } })} className="ml-3 underline">Effacer la sélection</button>
+      </div>}
       <ul className="mt-1 flex flex-wrap gap-3 text-[10px] text-ink-400">
         <li className="flex items-center gap-1"><span className="h-0.5 w-4 bg-brand-600" aria-hidden="true" /> lien</li>
         <li className="flex items-center gap-1"><span className="h-0.5 w-4 border-t border-dashed border-amber-600" aria-hidden="true" /> lien manquant</li>
@@ -393,15 +424,16 @@ export function ProcessDiagramViz({ spec, callbacks }: { spec: ProcessDiagramSpe
   const reverse = spec.direction === 'right-to-left' || spec.direction === 'bottom-to-top'
   const axis = vertical ? (reverse ? 'flex-col-reverse' : 'flex-col') : (reverse ? 'flex-row-reverse' : 'flex-row')
   const arrow = vertical ? (reverse ? '-rotate-90' : 'rotate-90') : (reverse ? 'rotate-180' : '')
+  const [selected, setSelected] = useResettableSelection<VizSelection>(callbacks?.selectionResetKey)
   return (
     <VizFrame spec={spec} onOpenEvidence={callbacks?.onOpenEvidence}>
       <ol className={`flex ${axis} ${vertical ? '' : 'overflow-x-auto'} items-stretch gap-0`}>
         {spec.steps.map((step, i) => (
           <li key={step.id} className={`flex ${axis} items-center`}>
-            <div className="min-w-[130px] max-w-[190px] rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2">
+            <button type="button" aria-pressed={selected?.nodeId === step.id} onClick={() => { const value: VizSelection = { vizType: 'process_diagram', vizTitle: spec.title, label: step.label, nodeId: step.id, description: step.detail }; dispatchAction('select_node', { select_node: () => { setSelected(value); callbacks?.onSelect?.(value) } }) }} className={`min-w-[130px] max-w-[190px] rounded-xl border px-3 py-2 text-left ${selected?.nodeId === step.id ? 'border-brand-600 bg-brand-100' : 'border-brand-200 bg-brand-50/60'}`}>
               <p className="text-[12px] font-semibold text-ink-700">{step.label}</p>
               {step.detail && <p className="mt-0.5 text-[10.5px] leading-snug text-ink-400">{step.detail}</p>}
-            </div>
+            </button>
             {i < spec.steps.length - 1 && (
               <span className={`mx-1.5 text-brand-400 ${arrow}`} aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
@@ -410,6 +442,7 @@ export function ProcessDiagramViz({ spec, callbacks }: { spec: ProcessDiagramSpe
           </li>
         ))}
       </ol>
+      {selected && <div className="mt-3 rounded-lg bg-brand-50 p-3 text-xs text-ink-700"><p>{selected.label}</p>{selected.description && <p>{selected.description}</p>}{callbacks?.onExplainSelection && <button type="button" onClick={() => dispatchAction('explain_selection', { explain_selection: () => callbacks.onExplainSelection?.(selected) })} className="mt-2 font-semibold text-brand-700 underline">Expliquer cette étape</button>}<button type="button" className="ml-3 underline" onClick={() => dispatchAction('clear_selection', { clear_selection: () => { setSelected(null); callbacks?.onClearSelection?.() } })}>Effacer la sélection</button></div>}
     </VizFrame>
   )
 }

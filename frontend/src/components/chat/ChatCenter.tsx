@@ -35,17 +35,19 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [boundSelection, setBoundSelection] = useState<BoundVizSelection | null>(null)
+  const [selectionResetKey, setSelectionResetKey] = useState(0)
   const selection = selectionForContext(boundSelection, ws.activeId, ws.headId)
   const setSelection = (value: VizSelection | null) => setBoundSelection(value ? { threadId: ws.activeId, headId: ws.headId, value } : null)
+  const clearSelection = () => { setSelection(null); setSelectionResetKey(value => value + 1) }
 
-  const sendWithSelection = async (text: string, withSelection: VizSelection | null) => {
-    const final = withSelection ? buildSelectionMessage(withSelection, text) : text
-    setSelection(null)
-    if (ws.activeId) await ws.send(final)
+  const sendWithSelection = async (text: string, withSelection: VizSelection | null, explanationOnly = false) => {
+    const final = withSelection ? buildSelectionMessage({ ...withSelection, threadId: ws.activeId ?? undefined, branchId: ws.headId ?? undefined }, text) : text
+    clearSelection()
+    if (ws.activeId) await ws.send(final, undefined, explanationOnly)
     else {
       const title = final.split('\n')[0].slice(0, 80)
       const thread = await ws.newThread(title)
-      await ws.send(final, thread.id)
+      await ws.send(final, thread.id, explanationOnly)
     }
   }
 
@@ -61,6 +63,9 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
 
   const vizCallbacks = {
     onSelect: (sel: VizSelection) => setSelection(sel),
+    onClearSelection: clearSelection,
+    selectionResetKey: `${ws.activeId}:${ws.headId}:${selectionResetKey}`,
+    onExplainSelection: ws.isRunning ? undefined : (sel: VizSelection) => { void sendWithSelection(sel.nodes && sel.nodes.length > 1 ? 'Compare les éléments sélectionnés de cette illustration, sans lancer de mission.' : 'Explique cet élément de la présentation conceptuelle, sans lancer de mission.', sel, true) },
     onInvestigateSelection: (sel: VizSelection) => investigateSelection(sel),
     onRepairPresentation: async (raw: Record<string, unknown>, issue: Record<string, unknown>) => {
       if (!ws.activeId) throw new Error('Conversation indisponible')
@@ -163,7 +168,7 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
           </div>
         ) : !ws.loading && ws.messages.length === 0 ? (
           <div className="hide-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-10">
-            {selection && <div className="w-full"><SelectionChip selection={selection} onClear={() => setSelection(null)} onInvestigate={() => investigateSelection(selection)} /></div>}
+            {selection && <div className="w-full"><SelectionChip selection={selection} onClear={clearSelection} onInvestigate={selection.mode === 'conceptual' ? undefined : () => investigateSelection(selection)} /></div>}
             <WelcomeScreen
               composer={
                 <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={async text => { if (ws.activeId) await ws.send(text); else { const title = text.split('\n')[0].slice(0, 80); const thread = await ws.newThread(title); await ws.send(text, thread.id) } }} onCancel={() => void ws.cancel()} />
@@ -172,11 +177,11 @@ export function ChatCenter({ onOpenSidebar, onToggleInvestigation }: Props) {
             />
           </div>
         ) : (
-          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => void ws.switchBranch(id)} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={vizCallbacks.onOpenEvidence}
+          <><div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-[760px] px-5">{ws.loading ? <p className="py-10 text-center text-sm text-slate-400">Chargement…</p> : <ChatMessages key={ws.activeId} messages={ws.messages} branches={ws.branches} headId={ws.headId} isRunning={ws.isRunning} onRegenerate={id => void ws.regenerate(id)} onEdit={(id, content) => void ws.editMessage(id, content)} onSwitchBranch={id => { clearSelection(); void ws.switchBranch(id) }} onOpenThread={id => { void ws.selectThread(id) }} onOpenEvidence={vizCallbacks.onOpenEvidence}
 onInvestigate={investigateLegacyRecord} vizCallbacks={vizCallbacks} />}</div></div>
           <footer className="bg-white px-4 pb-4 pt-2"><div className="mx-auto max-w-[760px]">
-            {selection && <SelectionChip selection={selection} onClear={() => setSelection(null)} onInvestigate={() => investigateSelection(selection)} />}
-            <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={text => sendWithSelection(text, selection)} onCancel={() => void ws.cancel()} />
+            {selection && <SelectionChip selection={selection} onClear={clearSelection} onInvestigate={selection.mode === 'conceptual' ? undefined : () => investigateSelection(selection)} />}
+            <ChatComposer chatModel={chatModel} drafts={drafts} setDrafts={setDrafts} threadId={ws.activeId} running={ws.isRunning} onSend={text => sendWithSelection(text, selection, selection?.mode === 'conceptual')} onCancel={() => void ws.cancel()} />
           </div></footer></>
         )}
       </section>

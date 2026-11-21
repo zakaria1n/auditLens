@@ -19,7 +19,7 @@ export function SelectionChip({ selection, onClear, onInvestigate }: SelectionCh
         <path d="M13 7h4v4h-4z" />
       </svg>
       <p className="min-w-0 flex-1 truncate text-[12px] text-brand-800" title={describeSelection(selection)}>
-        <span className="font-semibold">Sélection jointe au prochain message :</span>{' '}
+        <span className="font-semibold">{selection.mode === 'conceptual' ? 'Illustration sélectionnée (sans outils) :' : 'Sélection jointe au prochain message :'}</span>{' '}
         {describeSelection(selection)}
       </p>
       {onInvestigate && (
